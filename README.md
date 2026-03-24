@@ -12,16 +12,35 @@ Windows watchdog for leaked Codex subagent MCP process suites.
 - 默认保留最新 `6` 套
 - 只清理超额的旧 orphan suites
 
+## 适用范围
+
+- 平台：Windows
+- 目标问题：Codex subagent / 多 agent 模式下，MCP 没有跟随退出，逐渐堆积成孤儿进程
+- 默认识别关键字：
+  - `codex.exe`
+  - `@modelcontextprotocol/*`
+  - `agentation-mcp`
+  - `mcp-server-fetch`
+  - `ace-tool`
+  - `auggie`
+
 ## 快速开始
 
-### 1. 创建本地虚拟环境
+### 1. 克隆仓库
+
+```powershell
+git clone https://github.com/leonsong09/Codexsubmcp.git
+cd Codexsubmcp
+```
+
+### 2. 创建本地虚拟环境
 
 ```powershell
 python -m venv venv
 venv\Scripts\python.exe -m pip install -e .[dev]
 ```
 
-### 2. 手工预览
+### 3. 手工预览
 
 默认是 dry-run：
 
@@ -29,7 +48,7 @@ venv\Scripts\python.exe -m pip install -e .[dev]
 venv\Scripts\python.exe tools\cleanup_codex_mcp_orphans.py
 ```
 
-### 3. 注册自动巡检
+### 4. 注册自动巡检
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\install_codex_mcp_watchdog.ps1
@@ -40,6 +59,42 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\install_codex_mcp_
 - 复制本地配置到 `temp\codex_mcp_watchdog\config.json`
 - 注册计划任务 `CodexSubMcpWatchdog`
 - 通过 `tools\run_codex_mcp_watchdog.ps1` 每 10 分钟巡检一次
+
+## 另一台电脑如何配置
+
+```powershell
+cd D:\Documents\Code\Tools
+git clone https://github.com/leonsong09/Codexsubmcp.git
+cd Codexsubmcp
+
+python -m venv venv
+venv\Scripts\python.exe -m pip install -e .
+
+venv\Scripts\python.exe tools\cleanup_codex_mcp_orphans.py
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\install_codex_mcp_watchdog.ps1
+```
+
+推荐先跑一次 dry-run，再安装计划任务。
+
+## 验证
+
+### 检查计划任务
+
+```powershell
+Get-ScheduledTask -TaskName CodexSubMcpWatchdog
+```
+
+### 检查本地配置
+
+```powershell
+Get-Content temp\codex_mcp_watchdog\config.json
+```
+
+### 再做一次手工 dry-run
+
+```powershell
+venv\Scripts\python.exe tools\cleanup_codex_mcp_orphans.py
+```
 
 ## 本地配置
 
@@ -58,14 +113,43 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\install_codex_mcp_
 - `codex_patterns`
 - `candidate_patterns`
 
+如果不同机器上的 MCP 组合不同，优先改 `candidate_patterns`，不要直接改源码。
+
+## 常用命令
+
+### 只预览，不清理
+
+```powershell
+venv\Scripts\python.exe tools\cleanup_codex_mcp_orphans.py
+```
+
+### 立即执行一次真实清理
+
+```powershell
+venv\Scripts\python.exe tools\cleanup_codex_mcp_orphans.py --yes
+```
+
+### 重新安装任务，并改成每 5 分钟巡检
+
+```powershell
+venv\Scripts\python.exe tools\install_codex_mcp_watchdog.py --interval-minutes 5
+```
+
+## 日志
+
+- 配置目录：`temp\codex_mcp_watchdog\`
+- 运行日志：`temp\codex_mcp_watchdog\logs\`
+
 ## 测试
 
 ```powershell
-python -m pytest tests\test_cleanup_codex_mcp_orphans.py tests\test_install_codex_mcp_watchdog.py -q
+venv\Scripts\python.exe -m pytest tests\test_cleanup_codex_mcp_orphans.py tests\test_install_codex_mcp_watchdog.py -q
 ```
 
-## GitHub 发布
+## 当前状态
 
-当前仓库可直接本地初始化并提交。
-
-如果机器已经有 GitHub CLI 或 token，可继续创建 public repo 并 push；如果没有，需要补一次 GitHub 登录态后再执行远端创建。
+- 仓库：`https://github.com/leonsong09/Codexsubmcp`
+- 已验证：
+  - focused pytest 通过
+  - 本机 dry-run 可正常输出
+  - 计划任务 `CodexSubMcpWatchdog` 可正常注册
