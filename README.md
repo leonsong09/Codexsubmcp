@@ -32,7 +32,7 @@ venv\Scripts\python.exe tools\cleanup_codex_mcp_orphans.py
 ### 3. 注册自动巡检
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools\install_codex_mcp_watchdog.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\install_codex_mcp_watchdog.ps1
 ```
 
 安装后会：
