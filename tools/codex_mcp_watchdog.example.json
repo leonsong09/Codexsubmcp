@@ -1,0 +1,19 @@
+{
+  "task_name": "CodexSubMcpWatchdog",
+  "interval_minutes": 10,
+  "max_suites": 6,
+  "suite_window_seconds": 15,
+  "codex_patterns": [
+    "codex.exe",
+    "@openai/codex/bin/codex.js"
+  ],
+  "candidate_patterns": [
+    "@modelcontextprotocol/",
+    "agentation-mcp",
+    "mcp-server-fetch",
+    "ace-tool",
+    "auggie",
+    "--mcp"
+  ]
+}
+
