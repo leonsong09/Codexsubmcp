@@ -11,6 +11,7 @@ from codexsubmcp.app_paths import build_runtime_paths, ensure_runtime_config
 from codexsubmcp.core.cleanup import run_cleanup
 from codexsubmcp.core.config import DEFAULT_CONFIG, load_config
 from codexsubmcp.core.mcp_inventory import build_inventory
+from codexsubmcp.gui.app import launch_gui
 from codexsubmcp.platform.windows.processes import load_windows_processes
 from codexsubmcp.platform.windows.mcp_sources import (
     scan_configured_sources,
@@ -79,7 +80,7 @@ def _run_cleanup_command(command_name: str, *, config_path: Path | None, dry_run
 
 
 def _cmd_gui(_args: argparse.Namespace) -> int:
-    return 0
+    return launch_gui()
 
 
 def _cmd_dry_run(args: argparse.Namespace) -> int:
