@@ -32,3 +32,15 @@ class CleanupReport:
     suites: tuple[ProcessSuite, ...]
     cleanup_targets: tuple[ProcessSuite, ...]
     actions: list[str]
+
+
+@dataclass(frozen=True)
+class McpRecord:
+    name: str
+    category: str
+    source: str
+    command: str | None = None
+    path: Path | None = None
+    version: str | None = None
+    confidence: str = "medium"
+    notes: str | None = None

@@ -10,7 +10,14 @@ from typing import Sequence
 from codexsubmcp.app_paths import build_runtime_paths, ensure_runtime_config
 from codexsubmcp.core.cleanup import run_cleanup
 from codexsubmcp.core.config import DEFAULT_CONFIG, load_config
+from codexsubmcp.core.mcp_inventory import build_inventory
 from codexsubmcp.platform.windows.processes import load_windows_processes
+from codexsubmcp.platform.windows.mcp_sources import (
+    scan_configured_sources,
+    scan_npm_global_packages,
+    scan_path_candidates,
+    scan_python_candidates,
+)
 
 
 def _run_taskkill(pid: int) -> None:
@@ -110,6 +117,22 @@ def _cmd_scan(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_scan_mcp(args: argparse.Namespace) -> int:
+    payload = build_inventory(
+        configured=scan_configured_sources(),
+        installed_candidates=[
+            *scan_npm_global_packages(),
+            *scan_path_candidates(),
+            *scan_python_candidates(),
+        ],
+    )
+    if args.format == "json":
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
+    print(payload)
+    return 0
+
+
 def _cmd_config_validate(args: argparse.Namespace) -> int:
     load_config(runtime_path=_resolve_config_path(args.config))
     print("valid")
@@ -143,7 +166,11 @@ def build_parser() -> argparse.ArgumentParser:
     task_parser.set_defaults(func=_cmd_task)
 
     scan_parser = subparsers.add_parser("scan")
-    scan_parser.set_defaults(func=_cmd_scan)
+    scan_subparsers = scan_parser.add_subparsers(dest="scan_command")
+
+    scan_mcp_parser = scan_subparsers.add_parser("mcp")
+    scan_mcp_parser.add_argument("--format", choices=["json"], default="json")
+    scan_mcp_parser.set_defaults(func=_cmd_scan_mcp)
 
     config_parser = subparsers.add_parser("config")
     config_subparsers = config_parser.add_subparsers(dest="config_command")
