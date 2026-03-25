@@ -5,22 +5,9 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from codexsubmcp.core.config import DEFAULT_CONFIG
+
 APP_DIR_NAME = "CodexSubMcpManager"
-DEFAULT_CONFIG = {
-    "task_name": "CodexSubMcpWatchdog",
-    "interval_minutes": 10,
-    "max_suites": 6,
-    "suite_window_seconds": 15,
-    "codex_patterns": ["codex.exe", "@openai/codex/bin/codex.js"],
-    "candidate_patterns": [
-        "@modelcontextprotocol/",
-        "agentation-mcp",
-        "mcp-server-fetch",
-        "ace-tool",
-        "auggie",
-        "--mcp",
-    ],
-}
 
 
 @dataclass(frozen=True)
