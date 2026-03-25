@@ -2,6 +2,29 @@
 
 Windows watchdog for leaked Codex subagent MCP process suites.
 
+## Release 使用
+
+推荐直接使用 GitHub Release 中的单文件 GUI：
+
+1. 下载 `CodexSubMcpManager.exe`
+2. 双击启动 GUI
+3. 先在 `总览` 页执行一次 `立即预览`
+4. 如需后台巡检，在 `计划任务` 页安装 `CodexSubMcpWatchdog`
+
+运行时目录：
+
+- `%LOCALAPPDATA%\CodexSubMcpManager\config.json`
+- `%LOCALAPPDATA%\CodexSubMcpManager\logs\`
+- `%LOCALAPPDATA%\CodexSubMcpManager\bin\CodexSubMcpManager.exe`
+
+CLI 入口：
+
+```powershell
+CodexSubMcpManager.exe dry-run --headless
+CodexSubMcpManager.exe run-once --headless
+CodexSubMcpManager.exe scan mcp --format json
+```
+
 ## 作用
 
 当 Codex 在 subagent / 多 agent 并行场景下重复拉起 MCP，而部分 MCP 没有随 agent 退出时，这个工具会：
@@ -23,6 +46,10 @@ Windows watchdog for leaked Codex subagent MCP process suites.
   - `mcp-server-fetch`
   - `ace-tool`
   - `auggie`
+
+## 源码模式（Legacy）
+
+以下方式仍可用于源码仓库调试，但默认推荐 Release / GUI 模式。
 
 ## 快速开始
 
