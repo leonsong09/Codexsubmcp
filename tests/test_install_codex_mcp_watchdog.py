@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from tools.install_codex_mcp_watchdog import (
@@ -8,6 +10,7 @@ from tools.install_codex_mcp_watchdog import (
     ensure_runtime_config,
     resolve_project_python,
 )
+from tools.setup_codex_mcp_watchdog import run_setup
 
 
 def _touch(path: Path) -> None:
@@ -64,3 +67,95 @@ def test_install_powershell_wrapper_points_to_python_installer(project_root: Pat
 
     assert "install_codex_mcp_watchdog.py" in content
     assert "venv\\Scripts\\python.exe" in content
+
+
+def test_run_setup_bootstraps_venv_then_installs_dry_runs_and_registers(tmp_path):
+    bootstrap_python = tmp_path / "python.exe"
+    cleanup_script = tmp_path / "tools" / "cleanup_codex_mcp_orphans.py"
+    install_script = tmp_path / "tools" / "install_codex_mcp_watchdog.py"
+    _touch(bootstrap_python)
+    _touch(cleanup_script)
+    _touch(install_script)
+    commands: list[tuple[list[str], Path, bool]] = []
+
+    def fake_runner(command, *, cwd, check):
+        commands.append((command, cwd, check))
+
+        class Result:
+            returncode = 0
+
+        return Result()
+
+    exit_code = run_setup(
+        project_root=tmp_path,
+        bootstrap_python=bootstrap_python,
+        runner=fake_runner,
+    )
+
+    venv_python = tmp_path / "venv" / "Scripts" / "python.exe"
+    assert exit_code == 0
+    assert commands == [
+        ([str(bootstrap_python), "-m", "venv", str(tmp_path / "venv")], tmp_path, False),
+        ([str(venv_python), "-m", "pip", "install", "-e", ".[dev]"], tmp_path, False),
+        ([str(venv_python), str(cleanup_script)], tmp_path, False),
+        ([str(venv_python), str(install_script)], tmp_path, False),
+    ]
+
+
+def test_run_setup_reuses_existing_venv_without_recreating_it(tmp_path):
+    bootstrap_python = tmp_path / "python.exe"
+    venv_python = tmp_path / "venv" / "Scripts" / "python.exe"
+    cleanup_script = tmp_path / "tools" / "cleanup_codex_mcp_orphans.py"
+    install_script = tmp_path / "tools" / "install_codex_mcp_watchdog.py"
+    _touch(bootstrap_python)
+    _touch(venv_python)
+    _touch(cleanup_script)
+    _touch(install_script)
+    commands: list[list[str]] = []
+
+    def fake_runner(command, *, cwd, check):
+        commands.append(command)
+
+        class Result:
+            returncode = 0
+
+        return Result()
+
+    exit_code = run_setup(
+        project_root=tmp_path,
+        bootstrap_python=bootstrap_python,
+        runner=fake_runner,
+    )
+
+    assert exit_code == 0
+    assert commands == [
+        [str(venv_python), "-m", "pip", "install", "-e", ".[dev]"],
+        [str(venv_python), str(cleanup_script)],
+        [str(venv_python), str(install_script)],
+    ]
+
+
+def test_setup_powershell_wrapper_prefers_venv_and_falls_back_to_system_python(
+    project_root: Path = Path(__file__).resolve().parents[1],
+):
+    wrapper_path = project_root / "tools" / "setup_codex_mcp_watchdog.ps1"
+    content = wrapper_path.read_text(encoding="utf-8")
+
+    assert "setup_codex_mcp_watchdog.py" in content
+    assert "venv\\Scripts\\python.exe" in content
+    assert "Get-Command python.exe" in content
+
+
+def test_setup_python_entrypoint_runs_as_script(
+    project_root: Path = Path(__file__).resolve().parents[1],
+):
+    result = subprocess.run(
+        [sys.executable, str(project_root / "tools" / "setup_codex_mcp_watchdog.py"), "--help"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "一键初始化 Codex MCP watchdog" in result.stdout

@@ -60,6 +60,21 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\install_codex_mcp_
 - 注册计划任务 `CodexSubMcpWatchdog`
 - 通过 `tools\run_codex_mcp_watchdog.ps1` 每 10 分钟巡检一次
 
+### 5. 一键初始化
+
+如果你不想手工分步执行，可以直接运行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\setup_codex_mcp_watchdog.ps1
+```
+
+这个脚本会自动：
+
+- 创建或复用项目 `venv`
+- 安装 `-e .[dev]`
+- 跑一次 dry-run
+- 注册计划任务
+
 ## 另一台电脑如何配置
 
 ```powershell
@@ -75,6 +90,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\install_codex_mcp_
 ```
 
 推荐先跑一次 dry-run，再安装计划任务。
+
+如果希望一步完成，也可以直接运行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\setup_codex_mcp_watchdog.ps1
+```
 
 ## 验证
 
@@ -134,6 +155,20 @@ venv\Scripts\python.exe tools\cleanup_codex_mcp_orphans.py --yes
 ```powershell
 venv\Scripts\python.exe tools\install_codex_mcp_watchdog.py --interval-minutes 5
 ```
+
+### 一键初始化安装
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\setup_codex_mcp_watchdog.ps1
+```
+
+### 卸载计划任务
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\uninstall_codex_mcp_watchdog.ps1
+```
+
+默认只会移除 `CodexSubMcpWatchdog` 计划任务，不会删除本地配置和日志。
 
 ## 日志
 
