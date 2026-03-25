@@ -4,10 +4,10 @@ version = "0.1.0"
 description = "Windows watchdog for leaked Codex subagent MCP process suites"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["PySide6>=6.8"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0.0"]
+dev = ["pytest>=8.0.0", "pytest-qt>=4.4", "PyInstaller>=6.0.0"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
