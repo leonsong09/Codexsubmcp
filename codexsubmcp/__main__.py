@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-
-def main() -> int:
-    return 0
-
+from codexsubmcp.cli import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -53,7 +53,7 @@ def run_setup(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="一键初始化 Codex MCP watchdog")
+    parser = argparse.ArgumentParser(description="一键初始化 Codex MCP watchdog（legacy source-mode）")
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
     parser.add_argument("--bootstrap-python", type=Path, default=Path(sys.executable))
     args = parser.parse_args(argv)
