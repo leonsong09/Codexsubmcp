@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -40,8 +40,19 @@ jobs:
           "$($hash.Hash)  CodexSubMcpManager.exe" | Set-Content dist/checksums.txt
 
       - name: Upload Release Assets
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/CodexSubMcpManager.exe
-            dist/checksums.txt
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          $assets = @(
+            "dist/CodexSubMcpManager.exe",
+            "dist/checksums.txt"
+          )
+
+          gh release view $env:TAG_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:TAG_NAME $assets --clobber
+          } else {
+            gh release create $env:TAG_NAME $assets --title $env:TAG_NAME
+          }
