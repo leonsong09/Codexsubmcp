@@ -2,20 +2,14 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
-
-
 PROJECT_ROOT = Path.cwd()
-PYSIDE6_DATA = collect_data_files("PySide6")
-PYSIDE6_HIDDENIMPORTS = collect_submodules("PySide6")
-
 
 a = Analysis(
     [str(PROJECT_ROOT / "codexsubmcp" / "__main__.py")],
     pathex=[str(PROJECT_ROOT)],
     binaries=[],
-    datas=PYSIDE6_DATA,
-    hiddenimports=PYSIDE6_HIDDENIMPORTS,
+    datas=[],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

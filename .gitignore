@@ -5,3 +5,6 @@ venv/
 temp/
 *.pyc
 *.egg-info/
+.ace-tool/
+build/
+dist/
