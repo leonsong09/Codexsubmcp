@@ -36,6 +36,9 @@ class CleanupPage(QWidget):
     def set_summary(self, text: str) -> None:
         self.summary_label.setText(text)
 
+    def set_busy(self, text: str = "执行中...") -> None:
+        self.summary_label.setText(text)
+
     def set_report(self, payload: dict[str, object]) -> None:
         suites = payload.get("suites") or []
         self._suites = list(suites)

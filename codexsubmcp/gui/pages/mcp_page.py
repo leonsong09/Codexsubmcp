@@ -15,6 +15,7 @@ class McpPage(QWidget):
         self.configured_list = QListWidget()
         self.installed_list = QListWidget()
         self.refresh_button = QPushButton("刷新 MCP")
+        self.status_label = QLabel("")
 
         if task_runner is not None:
             self.refresh_button.clicked.connect(lambda: task_runner.dispatch("scan-mcp"))
@@ -33,6 +34,7 @@ class McpPage(QWidget):
 
         layout = QVBoxLayout()
         layout.addWidget(self.refresh_button)
+        layout.addWidget(self.status_label)
         layout.addLayout(body_layout)
         self.setLayout(layout)
 
@@ -45,3 +47,7 @@ class McpPage(QWidget):
             self.configured_list.addItem(str(record.get("name") or ""))
         for record in inventory.get("installed_candidates", []):
             self.installed_list.addItem(str(record.get("name") or ""))
+        self.status_label.setText("扫描完成")
+
+    def set_busy(self, text: str = "扫描中...") -> None:
+        self.status_label.setText(text)

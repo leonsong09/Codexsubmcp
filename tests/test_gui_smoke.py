@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -202,3 +203,31 @@ def test_task_page_refresh_updates_path_and_status(qtbot):
 
     assert "CodexSubMcpWatchdog" in window.task_page.status_label.text()
     assert window.task_page.path_label.text()
+
+
+def test_real_window_cleanup_runs_async_with_busy_feedback(qtbot, monkeypatch):
+    monkeypatch.setattr(
+        "codexsubmcp.gui.main_window.load_windows_processes",
+        lambda: (time.sleep(0.05) or []),
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    qtbot.mouseClick(window.cleanup_page.preview_button, Qt.LeftButton)
+
+    qtbot.waitUntil(lambda: "执行中" in window.cleanup_page.summary_label.text(), timeout=1000)
+    qtbot.waitUntil(lambda: "未发现需要处理的套件" in window.cleanup_page.summary_label.text(), timeout=2000)
+
+
+def test_real_window_mcp_refresh_runs_async_with_status_feedback(qtbot, monkeypatch):
+    monkeypatch.setattr(
+        "codexsubmcp.gui.main_window.scan_npm_global_packages",
+        lambda: (time.sleep(0.05) or []),
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    qtbot.mouseClick(window.mcp_page.refresh_button, Qt.LeftButton)
+
+    qtbot.waitUntil(lambda: "扫描中" in window.mcp_page.status_label.text(), timeout=1000)
+    qtbot.waitUntil(lambda: "扫描完成" in window.mcp_page.status_label.text(), timeout=2000)

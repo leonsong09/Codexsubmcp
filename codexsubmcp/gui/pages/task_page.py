@@ -16,6 +16,7 @@ class TaskPage(QWidget):
     def __init__(self, task_status: TaskStatus, task_runner=None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.status_label = QLabel(_status_summary(task_status))
+        self.activity_label = QLabel("")
         self.path_label = QLabel("")
         self.arguments_label = QLabel("")
         self.install_button = QPushButton("安装")
@@ -34,6 +35,7 @@ class TaskPage(QWidget):
         layout = QVBoxLayout()
         layout.addWidget(QLabel("计划任务"))
         layout.addWidget(self.status_label)
+        layout.addWidget(self.activity_label)
         layout.addWidget(self.path_label)
         layout.addWidget(self.arguments_label)
         layout.addWidget(self.install_button)
@@ -51,3 +53,10 @@ class TaskPage(QWidget):
         arguments = task_status.arguments or "未设置参数"
         self.path_label.setText(f"可执行文件：{executable}")
         self.arguments_label.setText(f"参数：{arguments}")
+        self.activity_label.setText("")
+
+    def set_busy(self, text: str = "执行中...") -> None:
+        self.activity_label.setText(text)
+
+    def set_error(self, text: str) -> None:
+        self.activity_label.setText(text)
