@@ -49,6 +49,7 @@ class McpPage(QWidget):
                 for part in [
                     str(record.get("name") or ""),
                     str(record.get("source") or ""),
+                    str(record.get("version") or ""),
                     str(record.get("confidence") or ""),
                 ]
                 if part

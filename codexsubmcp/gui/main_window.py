@@ -181,7 +181,7 @@ class MainWindow(QMainWindow):
                 return
             self.task_runner.run_task(
                 command,
-                lambda: self._install_and_refresh(source),
+                lambda: self._install_and_refresh(source, interval=int(payload.get("interval") or 10)),
             )
             return
         if command == "task-uninstall":
@@ -199,9 +199,9 @@ class MainWindow(QMainWindow):
         if command == "scan-mcp":
             self.task_runner.run_task(command, self._refresh_inventory)
 
-    def _install_and_refresh(self, source: Path) -> TaskStatus:
+    def _install_and_refresh(self, source: Path, *, interval: int) -> TaskStatus:
         installed_path = install_current_executable(source)
-        register_task(task_name=DEFAULT_TASK_NAME, executable_path=installed_path, interval_minutes=10)
+        register_task(task_name=DEFAULT_TASK_NAME, executable_path=installed_path, interval_minutes=interval)
         return self._refresh_task_status()
 
     def _uninstall_and_refresh(self) -> TaskStatus:

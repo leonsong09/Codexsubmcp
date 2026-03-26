@@ -127,7 +127,7 @@ def test_task_page_buttons_dispatch_management_actions(qtbot):
     qtbot.mouseClick(window.task_page.refresh_button, Qt.LeftButton)
 
     assert runner.requests == [
-        ("task-install", {}),
+        ("task-install", {"interval": 10}),
         ("task-disable", {}),
         ("task-status", {}),
     ]
