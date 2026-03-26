@@ -12,6 +12,13 @@ if __package__ in {None, ""}:
 from tools.install_codex_mcp_watchdog import PROJECT_ROOT, resolve_project_python
 
 
+def _configure_utf8_stdio() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
 def _run_step(
     command: list[str],
     *,
@@ -53,6 +60,7 @@ def run_setup(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    _configure_utf8_stdio()
     parser = argparse.ArgumentParser(description="一键初始化 Codex MCP watchdog（legacy source-mode）")
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
     parser.add_argument("--bootstrap-python", type=Path, default=Path(sys.executable))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -150,13 +151,17 @@ def test_setup_powershell_wrapper_prefers_venv_and_falls_back_to_system_python(
 def test_setup_python_entrypoint_runs_as_script(
     project_root: Path = Path(__file__).resolve().parents[1],
 ):
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "cp1252"
+
     result = subprocess.run(
         [sys.executable, str(project_root / "tools" / "setup_codex_mcp_watchdog.py"), "--help"],
         cwd=project_root,
         capture_output=True,
-        text=True,
         check=False,
+        env=env,
     )
+    stdout = result.stdout.decode("utf-8")
 
     assert result.returncode == 0
-    assert "一键初始化 Codex MCP watchdog" in result.stdout
+    assert "一键初始化 Codex MCP watchdog" in stdout
