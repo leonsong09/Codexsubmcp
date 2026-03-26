@@ -1,6 +1,6 @@
 [project]
 name = "codexsubmcp"
-version = "0.1.0"
+version = "0.2.1"
 description = "Windows watchdog for leaked Codex subagent MCP process suites"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -8,6 +8,10 @@ dependencies = ["PySide6>=6.8"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0", "pytest-qt>=4.4", "PyInstaller>=6.0.0", "pywin32>=308; platform_system == 'Windows'"]
+
+[tool.setuptools.packages.find]
+include = ["codexsubmcp*"]
+exclude = ["packaging*", "temp*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
