@@ -6,6 +6,7 @@ from pathlib import Path
 
 from codexsubmcp.cli import main
 from codexsubmcp.platform.windows.mcp_sources import (
+    discover_config_paths,
     scan_configured_sources,
     scan_npm_global_packages,
 )
@@ -64,7 +65,7 @@ def test_scan_npm_global_packages_returns_installed_candidates(monkeypatch):
 def test_scan_mcp_cli_returns_grouped_json(monkeypatch, capsys):
     monkeypatch.setattr(
         "codexsubmcp.cli.scan_configured_sources",
-        lambda: [
+        lambda _config_paths=None: [
             type(
                 "Record",
                 (),
@@ -92,3 +93,43 @@ def test_scan_mcp_cli_returns_grouped_json(monkeypatch, capsys):
     assert list(payload) == ["configured", "installed_candidates"]
     assert payload["configured"][0]["name"] == "memory"
     assert payload["installed_candidates"] == []
+
+
+def test_scan_configured_sources_discovers_default_paths(monkeypatch, tmp_path):
+    config_path = tmp_path / "Claude" / "claude_desktop_config.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "filesystem": {
+                        "command": "npx",
+                        "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "User"))
+
+    records = scan_configured_sources()
+
+    assert len(records) == 1
+    assert records[0].source == "claude_config"
+    assert records[0].name == "filesystem"
+
+
+def test_discover_config_paths_returns_known_existing_files(monkeypatch, tmp_path):
+    codex_path = tmp_path / "AppData" / "Roaming" / "Codex" / "mcp.json"
+    codex_path.parent.mkdir(parents=True, exist_ok=True)
+    codex_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    paths = discover_config_paths()
+
+    assert codex_path in paths

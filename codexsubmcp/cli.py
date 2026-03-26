@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
@@ -12,12 +13,21 @@ from codexsubmcp.core.cleanup import run_cleanup
 from codexsubmcp.core.config import DEFAULT_CONFIG, load_config
 from codexsubmcp.core.mcp_inventory import build_inventory
 from codexsubmcp.gui.app import launch_gui
+from codexsubmcp.platform.windows.install_artifact import STABLE_EXE_NAME
 from codexsubmcp.platform.windows.processes import load_windows_processes
 from codexsubmcp.platform.windows.mcp_sources import (
+    discover_config_paths,
     scan_configured_sources,
     scan_npm_global_packages,
     scan_path_candidates,
     scan_python_candidates,
+)
+from codexsubmcp.platform.windows.tasks import (
+    DEFAULT_TASK_NAME,
+    get_task_status,
+    register_task,
+    set_task_enabled,
+    unregister_task,
 )
 
 
@@ -120,7 +130,7 @@ def _cmd_scan(_args: argparse.Namespace) -> int:
 
 def _cmd_scan_mcp(args: argparse.Namespace) -> int:
     payload = build_inventory(
-        configured=scan_configured_sources(),
+        configured=scan_configured_sources(args.config_paths),
         installed_candidates=[
             *scan_npm_global_packages(),
             *scan_path_candidates(),
@@ -148,6 +158,57 @@ def _cmd_config_reset(args: argparse.Namespace) -> int:
     return 0
 
 
+def _task_status_to_dict(task_status) -> dict[str, object]:
+    return {
+        "task_name": task_status.task_name,
+        "installed": task_status.installed,
+        "enabled": task_status.enabled,
+        "executable_path": str(task_status.executable_path) if task_status.executable_path else None,
+        "arguments": task_status.arguments,
+    }
+
+
+def _default_executable_path() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable)
+    return build_runtime_paths().bin_dir / STABLE_EXE_NAME
+
+
+def _cmd_task_install(args: argparse.Namespace) -> int:
+    output = register_task(
+        task_name=args.task_name,
+        executable_path=args.executable_path or _default_executable_path(),
+        interval_minutes=args.interval,
+    )
+    print(output)
+    return 0
+
+
+def _cmd_task_uninstall(args: argparse.Namespace) -> int:
+    print(unregister_task(task_name=args.task_name))
+    return 0
+
+
+def _cmd_task_status(args: argparse.Namespace) -> int:
+    status = get_task_status(task_name=args.task_name)
+    payload = _task_status_to_dict(status)
+    if args.format == "json":
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
+    print(payload)
+    return 0
+
+
+def _cmd_task_enable(args: argparse.Namespace) -> int:
+    print(set_task_enabled(task_name=args.task_name, enabled=True))
+    return 0
+
+
+def _cmd_task_disable(args: argparse.Namespace) -> int:
+    print(set_task_enabled(task_name=args.task_name, enabled=False))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CodexSubMcp desktop manager")
     subparsers = parser.add_subparsers(dest="command")
@@ -164,13 +225,37 @@ def build_parser() -> argparse.ArgumentParser:
         command_parser.set_defaults(func=func)
 
     task_parser = subparsers.add_parser("task")
-    task_parser.set_defaults(func=_cmd_task)
+    task_subparsers = task_parser.add_subparsers(dest="task_command")
+
+    task_install_parser = task_subparsers.add_parser("install")
+    task_install_parser.add_argument("--task-name", default=DEFAULT_TASK_NAME)
+    task_install_parser.add_argument("--executable-path", type=Path)
+    task_install_parser.add_argument("--interval", type=int, default=10)
+    task_install_parser.set_defaults(func=_cmd_task_install)
+
+    task_uninstall_parser = task_subparsers.add_parser("uninstall")
+    task_uninstall_parser.add_argument("--task-name", default=DEFAULT_TASK_NAME)
+    task_uninstall_parser.set_defaults(func=_cmd_task_uninstall)
+
+    task_status_parser = task_subparsers.add_parser("status")
+    task_status_parser.add_argument("--task-name", default=DEFAULT_TASK_NAME)
+    task_status_parser.add_argument("--format", choices=["json"], default="json")
+    task_status_parser.set_defaults(func=_cmd_task_status)
+
+    task_enable_parser = task_subparsers.add_parser("enable")
+    task_enable_parser.add_argument("--task-name", default=DEFAULT_TASK_NAME)
+    task_enable_parser.set_defaults(func=_cmd_task_enable)
+
+    task_disable_parser = task_subparsers.add_parser("disable")
+    task_disable_parser.add_argument("--task-name", default=DEFAULT_TASK_NAME)
+    task_disable_parser.set_defaults(func=_cmd_task_disable)
 
     scan_parser = subparsers.add_parser("scan")
     scan_subparsers = scan_parser.add_subparsers(dest="scan_command")
 
     scan_mcp_parser = scan_subparsers.add_parser("mcp")
     scan_mcp_parser.add_argument("--format", choices=["json"], default="json")
+    scan_mcp_parser.add_argument("--config-path", dest="config_paths", type=Path, action="append")
     scan_mcp_parser.set_defaults(func=_cmd_scan_mcp)
 
     config_parser = subparsers.add_parser("config")

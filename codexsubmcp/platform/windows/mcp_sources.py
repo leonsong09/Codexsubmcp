@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Sequence
@@ -24,9 +25,23 @@ def _looks_like_mcp(name: str) -> bool:
     return lowered.startswith("@modelcontextprotocol/") or "mcp" in lowered
 
 
+def discover_config_paths() -> list[Path]:
+    appdata = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    localappdata = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    userprofile = Path(os.environ.get("USERPROFILE") or Path.home())
+    candidates = [
+        appdata / "Claude" / "claude_desktop_config.json",
+        appdata / "Codex" / "mcp.json",
+        localappdata / "Codex" / "mcp.json",
+        userprofile / ".cursor" / "mcp.json",
+        userprofile / ".cursor" / "mcp_config.json",
+    ]
+    return [path for path in candidates if path.exists()]
+
+
 def scan_configured_sources(config_paths: Sequence[Path] | None = None) -> list[McpRecord]:
     if config_paths is None:
-        return []
+        config_paths = discover_config_paths()
 
     records: list[McpRecord] = []
     for config_path in config_paths:

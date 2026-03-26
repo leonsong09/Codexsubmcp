@@ -9,6 +9,7 @@ from pathlib import Path
 from codexsubmcp.cli import main
 from codexsubmcp.core.config import DEFAULT_CONFIG
 from codexsubmcp.core.models import ProcessInfo
+from codexsubmcp.platform.windows.tasks import TaskStatus
 
 
 def _proc(
@@ -78,3 +79,53 @@ def test_main_config_validate_returns_zero_for_valid_config(tmp_path):
     config_path.write_text(json.dumps(DEFAULT_CONFIG), encoding="utf-8")
 
     assert main(["config", "validate", "--config", str(config_path)]) == 0
+
+
+def test_main_task_status_outputs_structured_json(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "codexsubmcp.cli.get_task_status",
+        lambda task_name: TaskStatus(
+            task_name=task_name,
+            installed=True,
+            enabled=True,
+            executable_path=Path("C:/Tools/CodexSubMcpManager.exe"),
+            arguments="run-once --headless",
+        ),
+    )
+
+    exit_code = main(["task", "status", "--format", "json"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["task_name"] == "CodexSubMcpWatchdog"
+    assert payload["installed"] is True
+    assert payload["enabled"] is True
+    assert payload["arguments"] == "run-once --headless"
+
+
+def test_main_task_install_calls_register_task(monkeypatch, tmp_path):
+    executable_path = tmp_path / "CodexSubMcpManager.exe"
+    executable_path.write_text("exe", encoding="utf-8")
+    seen: list[tuple[str, Path, int]] = []
+
+    monkeypatch.setattr(
+        "codexsubmcp.cli.register_task",
+        lambda task_name, executable_path, interval_minutes: seen.append(
+            (task_name, executable_path, interval_minutes)
+        )
+        or "REGISTERED:CodexSubMcpWatchdog",
+    )
+
+    exit_code = main(
+        [
+            "task",
+            "install",
+            "--executable-path",
+            str(executable_path),
+            "--interval",
+            "5",
+        ]
+    )
+
+    assert exit_code == 0
+    assert seen == [("CodexSubMcpWatchdog", executable_path, 5)]
