@@ -48,15 +48,16 @@ def test_ensure_runtime_config_copies_example_once(tmp_path):
 
 
 def test_build_register_task_script_contains_runner_task_name_and_interval(tmp_path):
-    runner_script = tmp_path / "tools" / "run_codex_mcp_watchdog.ps1"
+    executable_path = tmp_path / "CodexSubMcpManager.exe"
     script = build_register_task_script(
         task_name="CodexSubMcpWatchdog",
-        runner_script_path=runner_script,
+        executable_path=executable_path,
         interval_minutes=10,
     )
 
     assert "CodexSubMcpWatchdog" in script
-    assert str(runner_script) in script
+    assert str(executable_path) in script
+    assert "run-once --headless" in script
     assert "Minutes 10" in script
     assert "Register-ScheduledTask" in script
 
