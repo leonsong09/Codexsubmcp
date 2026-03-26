@@ -16,6 +16,8 @@ class TaskPage(QWidget):
     def __init__(self, task_status: TaskStatus, task_runner=None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.status_label = QLabel(_status_summary(task_status))
+        self.path_label = QLabel("")
+        self.arguments_label = QLabel("")
         self.install_button = QPushButton("安装")
         self.uninstall_button = QPushButton("卸载")
         self.enable_button = QPushButton("启用")
@@ -32,6 +34,8 @@ class TaskPage(QWidget):
         layout = QVBoxLayout()
         layout.addWidget(QLabel("计划任务"))
         layout.addWidget(self.status_label)
+        layout.addWidget(self.path_label)
+        layout.addWidget(self.arguments_label)
         layout.addWidget(self.install_button)
         layout.addWidget(self.uninstall_button)
         layout.addWidget(self.enable_button)
@@ -39,6 +43,11 @@ class TaskPage(QWidget):
         layout.addWidget(self.refresh_button)
         layout.addStretch(1)
         self.setLayout(layout)
+        self.set_task_status(task_status)
 
     def set_task_status(self, task_status: TaskStatus) -> None:
         self.status_label.setText(_status_summary(task_status))
+        executable = str(task_status.executable_path) if task_status.executable_path else "未设置可执行路径"
+        arguments = task_status.arguments or "未设置参数"
+        self.path_label.setText(f"可执行文件：{executable}")
+        self.arguments_label.setText(f"参数：{arguments}")

@@ -127,12 +127,22 @@ class MainWindow(QMainWindow):
             dry_run=dry_run,
             kill_runner=self._run_taskkill,
         )
-        summary = (
-            f"候选 {len(report.suites)} 套，需要处理 {len(report.cleanup_targets)} 套。"
-        )
-        if report.actions:
-            summary = f"{summary} {'; '.join(report.actions)}"
-        self.cleanup_page.set_summary(summary)
+        payload = {
+            "suites": [
+                {
+                    "suite_id": suite.suite_id,
+                    "classification": suite.classification,
+                    "root_pid": suite.root_pid,
+                    "process_count": len(suite.processes),
+                    "created_at": suite.created_at.isoformat(),
+                    "process_ids": suite.process_ids,
+                }
+                for suite in report.suites
+            ],
+            "cleanup_targets": [suite.suite_id for suite in report.cleanup_targets],
+            "actions": report.actions,
+        }
+        self.cleanup_page.set_report(payload)
 
     @staticmethod
     def _run_taskkill(pid: int) -> None:

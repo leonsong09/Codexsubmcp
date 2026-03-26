@@ -150,3 +150,55 @@ def test_mcp_page_refresh_button_dispatches_scan(qtbot):
     qtbot.mouseClick(window.mcp_page.refresh_button, Qt.LeftButton)
 
     assert runner.requests == [("scan-mcp", {})]
+
+
+def test_cleanup_page_can_render_suite_summary_and_details(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.cleanup_page.set_report(
+        {
+            "suites": [
+                {
+                    "suite_id": "orphan-1",
+                    "classification": "orphaned_after_codex_exit",
+                    "root_pid": 210,
+                    "process_count": 2,
+                    "created_at": "2026-03-26T10:00:00",
+                    "process_ids": [210, 211],
+                }
+            ],
+            "cleanup_targets": ["orphan-1"],
+            "actions": ["dry-run pid=210 processes=2"],
+        }
+    )
+
+    assert window.cleanup_page.suite_list.count() == 1
+    assert "root_pid=210" in window.cleanup_page.detail_view.toPlainText()
+    assert "dry-run pid=210 processes=2" in window.cleanup_page.summary_label.text()
+
+
+def test_task_page_renders_executable_path_and_arguments(qtbot):
+    window = MainWindow(
+        task_status=TaskStatus(
+            task_name="CodexSubMcpWatchdog",
+            installed=True,
+            enabled=True,
+            executable_path=Path("C:/Users/test/AppData/Local/CodexSubMcpManager/bin/CodexSubMcpManager.exe"),
+            arguments="run-once --headless",
+        )
+    )
+    qtbot.addWidget(window)
+
+    assert "CodexSubMcpManager.exe" in window.task_page.path_label.text()
+    assert "run-once --headless" in window.task_page.arguments_label.text()
+
+
+def test_task_page_refresh_updates_path_and_status(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    qtbot.mouseClick(window.task_page.refresh_button, Qt.LeftButton)
+
+    assert "CodexSubMcpWatchdog" in window.task_page.status_label.text()
+    assert window.task_page.path_label.text()
