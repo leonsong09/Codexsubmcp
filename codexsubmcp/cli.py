@@ -13,7 +13,7 @@ from codexsubmcp.core.cleanup import run_cleanup
 from codexsubmcp.core.config import DEFAULT_CONFIG, load_config
 from codexsubmcp.core.mcp_inventory import build_inventory
 from codexsubmcp.gui.app import launch_gui
-from codexsubmcp.platform.windows.install_artifact import STABLE_EXE_NAME
+from codexsubmcp.platform.windows.install_artifact import STABLE_EXE_NAME, install_current_executable
 from codexsubmcp.platform.windows.processes import load_windows_processes
 from codexsubmcp.platform.windows.mcp_sources import (
     discover_config_paths,
@@ -67,7 +67,14 @@ def _report_payload(command_name: str, *, dry_run: bool, report) -> dict[str, ob
     }
 
 
-def _run_cleanup_command(command_name: str, *, config_path: Path | None, dry_run: bool, headless: bool) -> int:
+def _run_cleanup_command(
+    command_name: str,
+    *,
+    config_path: Path | None,
+    dry_run: bool,
+    headless: bool,
+    report_file: Path | None = None,
+) -> int:
     config = load_config(runtime_path=_resolve_config_path(config_path))
     report = run_cleanup(
         load_windows_processes(),
@@ -78,6 +85,9 @@ def _run_cleanup_command(command_name: str, *, config_path: Path | None, dry_run
     payload = _report_payload(command_name, dry_run=dry_run, report=report)
     if headless:
         payload["log_path"] = str(_write_runtime_log(command_name, payload))
+        if report_file is not None:
+            report_file.parent.mkdir(parents=True, exist_ok=True)
+            report_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(payload, ensure_ascii=False))
         return 0
 
@@ -99,6 +109,7 @@ def _cmd_dry_run(args: argparse.Namespace) -> int:
         config_path=args.config,
         dry_run=True,
         headless=args.headless,
+        report_file=args.report_file,
     )
 
 
@@ -108,6 +119,7 @@ def _cmd_cleanup(args: argparse.Namespace) -> int:
         config_path=args.config,
         dry_run=not args.yes,
         headless=args.headless,
+        report_file=args.report_file,
     )
 
 
@@ -117,6 +129,7 @@ def _cmd_run_once(args: argparse.Namespace) -> int:
         config_path=args.config,
         dry_run=False,
         headless=args.headless,
+        report_file=args.report_file,
     )
 
 
@@ -165,6 +178,8 @@ def _task_status_to_dict(task_status) -> dict[str, object]:
         "enabled": task_status.enabled,
         "executable_path": str(task_status.executable_path) if task_status.executable_path else None,
         "arguments": task_status.arguments,
+        "interval_minutes": task_status.interval_minutes,
+        "next_run_time": task_status.next_run_time,
     }
 
 
@@ -175,9 +190,11 @@ def _default_executable_path() -> Path:
 
 
 def _cmd_task_install(args: argparse.Namespace) -> int:
+    source_path = args.executable_path or _default_executable_path()
+    installed_path = install_current_executable(source_path)
     output = register_task(
         task_name=args.task_name,
-        executable_path=args.executable_path or _default_executable_path(),
+        executable_path=installed_path,
         interval_minutes=args.interval,
     )
     print(output)
@@ -220,6 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
         command_parser = subparsers.add_parser(name)
         command_parser.add_argument("--config", type=Path)
         command_parser.add_argument("--headless", action="store_true")
+        command_parser.add_argument("--report-file", type=Path)
         if name == "cleanup":
             command_parser.add_argument("--yes", action="store_true")
         command_parser.set_defaults(func=func)

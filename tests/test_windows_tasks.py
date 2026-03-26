@@ -71,3 +71,26 @@ def test_parse_task_status_handles_disabled_task():
         executable_path=Path("C:/Users/test/AppData/Local/CodexSubMcpManager/bin/CodexSubMcpManager.exe"),
         arguments="run-once --headless",
     )
+
+
+def test_parse_task_status_parses_interval_and_next_run_time():
+    status = parse_task_status(
+        {
+            "TaskName": "CodexSubMcpWatchdog",
+            "State": "Ready",
+            "Execute": "C:/Users/test/AppData/Local/CodexSubMcpManager/bin/CodexSubMcpManager.exe",
+            "Arguments": "run-once --headless",
+            "RepetitionInterval": "PT15M",
+            "NextRunTime": "2026-03-26T10:30:00",
+        }
+    )
+
+    assert status == TaskStatus(
+        task_name="CodexSubMcpWatchdog",
+        installed=True,
+        enabled=True,
+        executable_path=Path("C:/Users/test/AppData/Local/CodexSubMcpManager/bin/CodexSubMcpManager.exe"),
+        arguments="run-once --headless",
+        interval_minutes=15,
+        next_run_time="2026-03-26T10:30:00",
+    )

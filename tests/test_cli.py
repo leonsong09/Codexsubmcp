@@ -74,6 +74,34 @@ def test_main_dry_run_headless_outputs_structured_json(monkeypatch, tmp_path, ca
     assert payload["actions"] == ["dry-run pid=210 processes=2"]
 
 
+def test_main_cleanup_headless_writes_report_file(monkeypatch, tmp_path, capsys):
+    config_path = tmp_path / "config.json"
+    report_path = tmp_path / "cleanup-report.json"
+    config_path.write_text(json.dumps(DEFAULT_CONFIG), encoding="utf-8")
+
+    monkeypatch.setattr(
+        "codexsubmcp.cli.load_windows_processes",
+        lambda: [_proc(210, 9999, "node.exe", "2026-03-24T09:00:00", "agentation-mcp server")],
+    )
+
+    exit_code = main(
+        [
+            "cleanup",
+            "--yes",
+            "--headless",
+            "--config",
+            str(config_path),
+            "--report-file",
+            str(report_path),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert report_path.exists()
+    assert json.loads(report_path.read_text(encoding="utf-8")) == payload
+
+
 def test_main_config_validate_returns_zero_for_valid_config(tmp_path):
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps(DEFAULT_CONFIG), encoding="utf-8")
@@ -106,8 +134,13 @@ def test_main_task_status_outputs_structured_json(monkeypatch, capsys):
 def test_main_task_install_calls_register_task(monkeypatch, tmp_path):
     executable_path = tmp_path / "CodexSubMcpManager.exe"
     executable_path.write_text("exe", encoding="utf-8")
+    stable_path = tmp_path / "stable" / "CodexSubMcpManager.exe"
     seen: list[tuple[str, Path, int]] = []
 
+    monkeypatch.setattr(
+        "codexsubmcp.cli.install_current_executable",
+        lambda path: stable_path,
+    )
     monkeypatch.setattr(
         "codexsubmcp.cli.register_task",
         lambda task_name, executable_path, interval_minutes: seen.append(
@@ -128,4 +161,4 @@ def test_main_task_install_calls_register_task(monkeypatch, tmp_path):
     )
 
     assert exit_code == 0
-    assert seen == [("CodexSubMcpWatchdog", executable_path, 5)]
+    assert seen == [("CodexSubMcpWatchdog", stable_path, 5)]

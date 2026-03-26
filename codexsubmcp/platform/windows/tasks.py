@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,8 @@ class TaskStatus:
     enabled: bool | None
     executable_path: Path | None
     arguments: str | None
+    interval_minutes: int | None = None
+    next_run_time: str | None = None
 
 
 def build_register_task_script(
@@ -64,11 +67,15 @@ if ($null -eq $task) {{
     exit 0
 }}
 $action = $task.Actions | Select-Object -First 1
+$taskInfo = Get-ScheduledTaskInfo -TaskName $taskName
+$repeatTrigger = $task.Triggers | Where-Object {{ $null -ne $_.Repetition -and $null -ne $_.Repetition.Interval }} | Select-Object -First 1
 [PSCustomObject]@{{
     TaskName = $task.TaskName
     State = [string]$task.State
     Execute = [string]$action.Execute
     Arguments = [string]$action.Arguments
+    RepetitionInterval = if ($null -ne $repeatTrigger) {{ [string]$repeatTrigger.Repetition.Interval }} else {{ '' }}
+    NextRunTime = if ($taskInfo.NextRunTime) {{ $taskInfo.NextRunTime.ToString('o') }} else {{ '' }}
 }} | ConvertTo-Json -Compress
 """.strip()
 
@@ -81,6 +88,20 @@ $taskName = '{escaped_task_name}'
 {command} -TaskName $taskName | Out-Null
 Write-Output "{'ENABLED' if enabled else 'DISABLED'}:$taskName"
 """.strip()
+
+
+def _parse_repetition_interval_minutes(value: object) -> int | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    match = re.match(r"^P(?:(?P<days>\d+)D)?(?:T(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?)?$", text)
+    if match is None:
+        return None
+    days = int(match.group("days") or 0)
+    hours = int(match.group("hours") or 0)
+    minutes = int(match.group("minutes") or 0)
+    total = days * 24 * 60 + hours * 60 + minutes
+    return total or None
 
 
 def parse_task_status(payload: dict[str, Any] | None) -> TaskStatus:
@@ -99,6 +120,8 @@ def parse_task_status(payload: dict[str, Any] | None) -> TaskStatus:
         enabled=state.lower() != "disabled",
         executable_path=Path(str(payload["Execute"])) if payload.get("Execute") else None,
         arguments=str(payload.get("Arguments") or "") or None,
+        interval_minutes=_parse_repetition_interval_minutes(payload.get("RepetitionInterval")),
+        next_run_time=str(payload.get("NextRunTime") or "") or None,
     )
 
 
