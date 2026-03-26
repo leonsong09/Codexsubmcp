@@ -100,3 +100,53 @@ def test_log_page_lists_files_and_shows_selected_content(qtbot, tmp_path):
 
     assert window.log_page.log_list.count() == 1
     assert "hello log" in window.log_page.detail_view.toPlainText()
+
+
+def test_cleanup_page_buttons_dispatch_preview_and_cleanup(qtbot):
+    runner = FakeTaskRunner()
+    window = MainWindow(task_runner=runner)
+    qtbot.addWidget(window)
+
+    qtbot.mouseClick(window.cleanup_page.preview_button, Qt.LeftButton)
+    qtbot.mouseClick(window.cleanup_page.cleanup_button, Qt.LeftButton)
+
+    assert runner.requests == [
+        ("dry-run", {"headless": False}),
+        ("cleanup", {"headless": False, "yes": True}),
+    ]
+
+
+def test_task_page_buttons_dispatch_management_actions(qtbot):
+    runner = FakeTaskRunner()
+    window = MainWindow(task_runner=runner)
+    qtbot.addWidget(window)
+
+    qtbot.mouseClick(window.task_page.install_button, Qt.LeftButton)
+    qtbot.mouseClick(window.task_page.disable_button, Qt.LeftButton)
+    qtbot.mouseClick(window.task_page.refresh_button, Qt.LeftButton)
+
+    assert runner.requests == [
+        ("task-install", {}),
+        ("task-disable", {}),
+        ("task-status", {}),
+    ]
+
+
+def test_real_window_updates_task_status_after_refresh(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    qtbot.mouseClick(window.task_page.refresh_button, Qt.LeftButton)
+
+    summary = window.task_page.status_label.text()
+    assert "CodexSubMcpWatchdog" in summary
+
+
+def test_mcp_page_refresh_button_dispatches_scan(qtbot):
+    runner = FakeTaskRunner()
+    window = MainWindow(task_runner=runner)
+    qtbot.addWidget(window)
+
+    qtbot.mouseClick(window.mcp_page.refresh_button, Qt.LeftButton)
+
+    assert runner.requests == [("scan-mcp", {})]

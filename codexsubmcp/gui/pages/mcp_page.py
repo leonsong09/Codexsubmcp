@@ -1,18 +1,23 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QLabel, QListWidget, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QListWidget, QPushButton, QHBoxLayout, QVBoxLayout, QWidget
 
 
 class McpPage(QWidget):
-    def __init__(self, *, inventory: dict[str, list[dict[str, object]]], parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        inventory: dict[str, list[dict[str, object]]],
+        task_runner=None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.configured_list = QListWidget()
         self.installed_list = QListWidget()
+        self.refresh_button = QPushButton("刷新 MCP")
 
-        for record in inventory.get("configured", []):
-            self.configured_list.addItem(str(record.get("name") or ""))
-        for record in inventory.get("installed_candidates", []):
-            self.installed_list.addItem(str(record.get("name") or ""))
+        if task_runner is not None:
+            self.refresh_button.clicked.connect(lambda: task_runner.dispatch("scan-mcp"))
 
         configured_layout = QVBoxLayout()
         configured_layout.addWidget(QLabel("已配置"))
@@ -22,7 +27,21 @@ class McpPage(QWidget):
         installed_layout.addWidget(QLabel("候选安装"))
         installed_layout.addWidget(self.installed_list)
 
-        layout = QHBoxLayout()
-        layout.addLayout(configured_layout)
-        layout.addLayout(installed_layout)
+        body_layout = QHBoxLayout()
+        body_layout.addLayout(configured_layout)
+        body_layout.addLayout(installed_layout)
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.refresh_button)
+        layout.addLayout(body_layout)
         self.setLayout(layout)
+
+        self.set_inventory(inventory)
+
+    def set_inventory(self, inventory: dict[str, list[dict[str, object]]]) -> None:
+        self.configured_list.clear()
+        self.installed_list.clear()
+        for record in inventory.get("configured", []):
+            self.configured_list.addItem(str(record.get("name") or ""))
+        for record in inventory.get("installed_candidates", []):
+            self.installed_list.addItem(str(record.get("name") or ""))
