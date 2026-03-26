@@ -47,6 +47,19 @@ def test_module_help_lists_subcommands(project_root: Path = Path(__file__).resol
     assert "config" in result.stdout
 
 
+def test_main_without_args_launches_gui(monkeypatch, capsys):
+    seen: list[str] = []
+
+    monkeypatch.setattr("codexsubmcp.cli.launch_gui", lambda: seen.append("gui") or 0)
+
+    exit_code = main([])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert seen == ["gui"]
+    assert captured.out == ""
+
+
 def test_main_dry_run_headless_outputs_structured_json(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     config_path = tmp_path / "config.json"
