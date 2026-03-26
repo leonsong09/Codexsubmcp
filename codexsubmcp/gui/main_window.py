@@ -193,6 +193,9 @@ class MainWindow(QMainWindow):
         if command == "task-disable":
             self.task_runner.run_task(command, self._disable_and_refresh)
             return
+        if command == "task-run-once":
+            self.task_runner.run_task(command, self._run_once_and_refresh)
+            return
         if command == "scan-mcp":
             self.task_runner.run_task(command, self._refresh_inventory)
 
@@ -211,6 +214,10 @@ class MainWindow(QMainWindow):
 
     def _disable_and_refresh(self) -> TaskStatus:
         set_task_enabled(task_name=DEFAULT_TASK_NAME, enabled=False)
+        return self._refresh_task_status()
+
+    def _run_once_and_refresh(self) -> TaskStatus:
+        self._run_cleanup(dry_run=False)
         return self._refresh_task_status()
 
     def _handle_started(self, command: str) -> None:

@@ -175,6 +175,7 @@ def test_cleanup_page_can_render_suite_summary_and_details(qtbot):
     )
 
     assert window.cleanup_page.suite_list.count() == 1
+    assert "会被清理" in window.cleanup_page.suite_list.item(0).text()
     assert "root_pid=210" in window.cleanup_page.detail_view.toPlainText()
     assert "dry-run pid=210 processes=2" in window.cleanup_page.summary_label.text()
 
@@ -193,6 +194,7 @@ def test_task_page_renders_executable_path_and_arguments(qtbot):
 
     assert "CodexSubMcpManager.exe" in window.task_page.path_label.text()
     assert "run-once --headless" in window.task_page.arguments_label.text()
+    assert "已启用" in window.task_page.status_label.text()
 
 
 def test_task_page_refresh_updates_path_and_status(qtbot):
@@ -203,6 +205,16 @@ def test_task_page_refresh_updates_path_and_status(qtbot):
 
     assert "CodexSubMcpWatchdog" in window.task_page.status_label.text()
     assert window.task_page.path_label.text()
+
+
+def test_task_page_has_run_once_button_and_dispatches_action(qtbot):
+    runner = FakeTaskRunner()
+    window = MainWindow(task_runner=runner)
+    qtbot.addWidget(window)
+
+    qtbot.mouseClick(window.task_page.run_once_button, Qt.LeftButton)
+
+    assert runner.requests == [("task-run-once", {})]
 
 
 def test_real_window_cleanup_runs_async_with_busy_feedback(qtbot, monkeypatch):
@@ -231,3 +243,31 @@ def test_real_window_mcp_refresh_runs_async_with_status_feedback(qtbot, monkeypa
 
     qtbot.waitUntil(lambda: "扫描中" in window.mcp_page.status_label.text(), timeout=1000)
     qtbot.waitUntil(lambda: "扫描完成" in window.mcp_page.status_label.text(), timeout=2000)
+
+
+def test_mcp_page_renders_source_version_and_confidence(qtbot):
+    window = MainWindow(
+        inventory={
+            "configured": [
+                {
+                    "name": "memory",
+                    "source": "codex_config",
+                    "version": None,
+                    "confidence": "high",
+                }
+            ],
+            "installed_candidates": [
+                {
+                    "name": "@modelcontextprotocol/server-filesystem",
+                    "source": "npm_global",
+                    "version": "1.0.0",
+                    "confidence": "high",
+                }
+            ],
+        }
+    )
+    qtbot.addWidget(window)
+
+    assert "codex_config" in window.mcp_page.configured_list.item(0).text()
+    assert "npm_global" in window.mcp_page.installed_list.item(0).text()
+    assert "1.0.0" in window.mcp_page.installed_list.item(0).text()

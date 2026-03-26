@@ -42,9 +42,12 @@ class CleanupPage(QWidget):
     def set_report(self, payload: dict[str, object]) -> None:
         suites = payload.get("suites") or []
         self._suites = list(suites)
+        cleanup_targets = set(payload.get("cleanup_targets") or [])
         self.suite_list.clear()
         for suite in self._suites:
-            self.suite_list.addItem(str(suite.get("suite_id") or ""))
+            suite_id = str(suite.get("suite_id") or "")
+            marker = "会被清理" if suite_id in cleanup_targets else "保留"
+            self.suite_list.addItem(f"{suite_id} | {marker}")
         actions = payload.get("actions") or []
         self.summary_label.setText("\n".join(str(action) for action in actions) if actions else "未发现需要处理的套件。")
         if self._suites:

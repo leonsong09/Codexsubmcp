@@ -44,9 +44,28 @@ class McpPage(QWidget):
         self.configured_list.clear()
         self.installed_list.clear()
         for record in inventory.get("configured", []):
-            self.configured_list.addItem(str(record.get("name") or ""))
+            label = " | ".join(
+                part
+                for part in [
+                    str(record.get("name") or ""),
+                    str(record.get("source") or ""),
+                    str(record.get("confidence") or ""),
+                ]
+                if part
+            )
+            self.configured_list.addItem(label)
         for record in inventory.get("installed_candidates", []):
-            self.installed_list.addItem(str(record.get("name") or ""))
+            label = " | ".join(
+                part
+                for part in [
+                    str(record.get("name") or ""),
+                    str(record.get("source") or ""),
+                    str(record.get("version") or ""),
+                    str(record.get("confidence") or ""),
+                ]
+                if part
+            )
+            self.installed_list.addItem(label)
         self.status_label.setText("扫描完成")
 
     def set_busy(self, text: str = "扫描中...") -> None:

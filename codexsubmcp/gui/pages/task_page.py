@@ -23,6 +23,7 @@ class TaskPage(QWidget):
         self.uninstall_button = QPushButton("卸载")
         self.enable_button = QPushButton("启用")
         self.disable_button = QPushButton("禁用")
+        self.run_once_button = QPushButton("立即执行一次")
         self.refresh_button = QPushButton("刷新")
 
         if task_runner is not None:
@@ -30,6 +31,7 @@ class TaskPage(QWidget):
             self.uninstall_button.clicked.connect(lambda: task_runner.dispatch("task-uninstall"))
             self.enable_button.clicked.connect(lambda: task_runner.dispatch("task-enable"))
             self.disable_button.clicked.connect(lambda: task_runner.dispatch("task-disable"))
+            self.run_once_button.clicked.connect(lambda: task_runner.dispatch("task-run-once"))
             self.refresh_button.clicked.connect(lambda: task_runner.dispatch("task-status"))
 
         layout = QVBoxLayout()
@@ -42,6 +44,7 @@ class TaskPage(QWidget):
         layout.addWidget(self.uninstall_button)
         layout.addWidget(self.enable_button)
         layout.addWidget(self.disable_button)
+        layout.addWidget(self.run_once_button)
         layout.addWidget(self.refresh_button)
         layout.addStretch(1)
         self.setLayout(layout)
