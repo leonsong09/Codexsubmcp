@@ -174,8 +174,14 @@ def test_cleanup_page_can_render_suite_summary_and_details(qtbot):
         }
     )
 
-    assert window.cleanup_page.suite_list.count() == 1
-    assert "会被清理" in window.cleanup_page.suite_list.item(0).text()
+    headers = [
+        window.cleanup_page.suite_table.horizontalHeaderItem(index).text()
+        for index in range(window.cleanup_page.suite_table.columnCount())
+    ]
+    assert headers == ["Suite", "分类", "Root PID", "进程数", "创建时间", "动作"]
+    assert window.cleanup_page.suite_table.rowCount() == 1
+    assert window.cleanup_page.suite_table.item(0, 0).text() == "orphan-1"
+    assert window.cleanup_page.suite_table.item(0, 5).text() == "会被清理"
     assert "root_pid=210" in window.cleanup_page.detail_view.toPlainText()
     assert "dry-run pid=210 processes=2" in window.cleanup_page.summary_label.text()
 

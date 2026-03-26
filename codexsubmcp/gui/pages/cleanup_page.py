@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QLabel, QListWidget, QPushButton, QPlainTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QLabel,
+    QPushButton,
+    QPlainTextEdit,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class CleanupPage(QWidget):
@@ -9,7 +17,8 @@ class CleanupPage(QWidget):
         self.preview_button = QPushButton("立即预览")
         self.cleanup_button = QPushButton("立即清理")
         self.summary_label = QLabel("尚未执行清理。")
-        self.suite_list = QListWidget()
+        self.suite_table = QTableWidget(0, 6)
+        self.suite_table.setHorizontalHeaderLabels(["Suite", "分类", "Root PID", "进程数", "创建时间", "动作"])
         self.detail_view = QPlainTextEdit()
         self.detail_view.setReadOnly(True)
         self._suites: list[dict[str, object]] = []
@@ -21,14 +30,14 @@ class CleanupPage(QWidget):
             self.cleanup_button.clicked.connect(
                 lambda: task_runner.dispatch("cleanup", headless=False, yes=True)
             )
-        self.suite_list.currentRowChanged.connect(self._render_selected_suite)
+        self.suite_table.currentCellChanged.connect(self._render_selected_suite)
 
         layout = QVBoxLayout()
         layout.addWidget(QLabel("清理"))
         layout.addWidget(self.preview_button)
         layout.addWidget(self.cleanup_button)
         layout.addWidget(self.summary_label)
-        layout.addWidget(self.suite_list)
+        layout.addWidget(self.suite_table)
         layout.addWidget(self.detail_view)
         layout.addStretch(1)
         self.setLayout(layout)
@@ -43,19 +52,28 @@ class CleanupPage(QWidget):
         suites = payload.get("suites") or []
         self._suites = list(suites)
         cleanup_targets = set(payload.get("cleanup_targets") or [])
-        self.suite_list.clear()
-        for suite in self._suites:
+        self.suite_table.setRowCount(len(self._suites))
+        for row, suite in enumerate(self._suites):
             suite_id = str(suite.get("suite_id") or "")
             marker = "会被清理" if suite_id in cleanup_targets else "保留"
-            self.suite_list.addItem(f"{suite_id} | {marker}")
+            values = [
+                suite_id,
+                str(suite.get("classification") or ""),
+                str(suite.get("root_pid") or ""),
+                str(suite.get("process_count") or ""),
+                str(suite.get("created_at") or ""),
+                marker,
+            ]
+            for column, value in enumerate(values):
+                self.suite_table.setItem(row, column, QTableWidgetItem(value))
         actions = payload.get("actions") or []
         self.summary_label.setText("\n".join(str(action) for action in actions) if actions else "未发现需要处理的套件。")
         if self._suites:
-            self.suite_list.setCurrentRow(0)
+            self.suite_table.setCurrentCell(0, 0)
         else:
             self.detail_view.clear()
 
-    def _render_selected_suite(self, row: int) -> None:
+    def _render_selected_suite(self, row: int, _column: int, *_args: int) -> None:
         if row < 0 or row >= len(self._suites):
             self.detail_view.clear()
             return
