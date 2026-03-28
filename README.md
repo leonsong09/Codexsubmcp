@@ -95,7 +95,15 @@ CodexSubMcpManager.exe config reset
 
 对应 release 文案见：
 
-- `docs/release-notes/2026-03-26-gui-alignment-release.md`
+- `docs/release-notes/2026-03-28-v0.3.0-cleanup-redesign.md`
+
+对外公告文案见：
+
+- `docs/release-announcements/2026-03-28-v0.3.0-end-user.md`
+
+维护者发布流程见：
+
+- `docs/release-process.md`
 
 对应手工验收清单见：
 
