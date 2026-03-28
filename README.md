@@ -16,20 +16,31 @@ Windows watchdog and desktop manager for leaked Codex subagent MCP process suite
 ### 主要能力
 
 - 单文件 `CodexSubMcpManager.exe`
-- GUI 管理 `dry-run`、真实清理、计划任务、配置、MCP 检索、日志
-- 计划任务直接指向稳定安装路径中的发布产物
-- 清理页支持 suites 表格、详情面板、复制和导出
-- 配置页支持 `表单 / JSON` 双模式编辑
-- MCP 页支持双 Tab、详情面板、复制和导出
-- 日志页支持过滤、导出、打开日志目录
+- 围绕 **刷新 → 预览 → 清理 → 日志** 的单一主流程
+- 展示当前运行态：
+  - 运行中子代理数量
+  - 运行中 suite 数量
+  - 运行中 MCP 实例数量
+  - 已配置 MCP 数量
+- 同时支持两类清理目标：
+  - `orphan_suite`
+  - `stale_attached_branch`
+- MCP 页只展示：
+  - configured
+  - running
+  - drift
+- 总览支持累计清理统计
+- 日志页支持 `refresh / preview / cleanup` 三类历史回放
 - 管理员动作支持按需提权
 
 ## Release 使用
 
 1. 下载 `CodexSubMcpManager.exe`
 2. 双击启动 GUI
-3. 在 `总览` 或 `清理` 页先执行一次 `立即预览`
-4. 如需后台巡检，在 `计划任务` 页安装 `CodexSubMcpWatchdog`
+3. 先在 `总览` 页执行一次 `刷新`
+4. 再执行 `预览清理`
+5. 确认后执行 `执行清理`
+6. 如需后台巡检，在 `计划任务` 页安装 `CodexSubMcpWatchdog`
 
 ### 运行时目录
 
@@ -52,6 +63,8 @@ Windows watchdog and desktop manager for leaked Codex subagent MCP process suite
 
 ```powershell
 CodexSubMcpManager.exe gui
+CodexSubMcpManager.exe refresh --headless
+CodexSubMcpManager.exe preview --headless
 CodexSubMcpManager.exe dry-run --headless
 CodexSubMcpManager.exe cleanup --yes --headless
 CodexSubMcpManager.exe cleanup --yes --headless --report-file cleanup-report.json
@@ -70,14 +83,13 @@ CodexSubMcpManager.exe config reset
 
 本版本已经补齐：
 
-- 顶部状态条
-- 底部活动抽屉
-- 总览快捷操作
-- 清理详情面板
-- 计划任务安装 / 重装 / 启停 / 卸载
-- 配置双模式
-- MCP 双层检索
-- 日志过滤与导出
+- Codex `config.toml` / 项目 `.codex/config.toml` 的 MCP 读取
+- `state_5.sqlite` open 子代理统计
+- 当前运行态分析（running / drift / stale）
+- `orphan_suite + stale_attached_branch` 双目标清理
+- `refresh / preview / cleanup` 三类结构化日志
+- 累计清理统计
+- GUI 主流程收口
 - 计划任务管理员动作按需提权
 - 真实清理管理员动作按需提权，并通过结构化报告回传 GUI
 
@@ -88,6 +100,7 @@ CodexSubMcpManager.exe config reset
 对应手工验收清单见：
 
 - `docs/manual-validation/2026-03-25-codexsubmcp-gui-release-checklist.md`
+- `docs/manual-validation/2026-03-28-cleanup-redesign-checklist.md`
 
 ## 源码模式（Legacy）
 
@@ -131,20 +144,20 @@ legacy 运行时配置仍在：
 工具会：
 
 - 扫描 Windows 原生进程树
+- 读取 Codex MCP TOML 配置
+- 读取 `thread_spawn_edges.status='open'` 统计子代理数
 - 按 PPID lineage 和启动时间窗口聚类为 MCP suites
-- 默认保留最新 `6` 套
-- 只清理超额的旧 orphan suites
+- 识别 live Codex 下重复拉起的 stale MCP branches
+- 先预览，再清理
 
 ## 验证
 
 当前已验证：
 
-- `QT_QPA_PLATFORM=offscreen python -m pytest tests/test_gui_smoke.py -q`
-- `QT_QPA_PLATFORM=offscreen python -m pytest -q`
-- `pyinstaller packaging/windows/CodexSubMcpManager.spec --noconfirm`
+- `pytest tests/test_cli.py tests/test_mcp_inventory.py tests/test_runtime_logs.py tests/test_cleanup_preview.py tests/test_cleanup_execution.py tests/test_core_cleanup.py tests/test_cleanup_codex_mcp_orphans.py tests/test_attached_cleanup.py tests/test_analysis.py tests/test_system_snapshot.py tests/test_codex_mcp_config.py tests/test_app_paths.py tests/test_gui_smoke.py -q`
+- `pytest -q`
 
 最近一轮完整结果：
 
-- GUI smoke: `35 passed`
-- 全量测试: `75 passed`
-- PyInstaller: 构建成功
+- GUI smoke: `39 passed`
+- 全量测试: `107 passed`

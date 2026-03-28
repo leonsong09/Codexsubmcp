@@ -8,6 +8,8 @@ from pathlib import Path
 from codexsubmcp.core.config import DEFAULT_CONFIG
 
 APP_DIR_NAME = "CodexSubMcpManager"
+CODEX_DIR_NAME = ".codex"
+CODEX_STATE_DB_NAME = "state_5.sqlite"
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,25 @@ def _local_appdata_root() -> Path:
     if value:
         return Path(value)
     return Path.home() / "AppData" / "Local"
+
+
+def resolve_codex_home() -> Path:
+    value = os.environ.get("CODEX_HOME")
+    if value:
+        return Path(value)
+    return Path.home() / CODEX_DIR_NAME
+
+
+def resolve_codex_sqlite_home() -> Path:
+    value = os.environ.get("CODEX_SQLITE_HOME")
+    if value:
+        path = Path(value)
+        return path if path.is_absolute() else Path.cwd() / path
+    return resolve_codex_home()
+
+
+def resolve_codex_state_db_path() -> Path:
+    return resolve_codex_sqlite_home() / CODEX_STATE_DB_NAME
 
 
 def build_runtime_paths() -> RuntimePaths:

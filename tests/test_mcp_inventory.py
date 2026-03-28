@@ -1,135 +1,96 @@
 from __future__ import annotations
 
 import json
-import subprocess
+from datetime import datetime
 from pathlib import Path
 
 from codexsubmcp.cli import main
-from codexsubmcp.platform.windows.mcp_sources import (
-    discover_config_paths,
-    scan_configured_sources,
-    scan_npm_global_packages,
-)
+from codexsubmcp.core.analysis import AnalysisResult, AnalysisSummary, RunningMcpSummary
+from codexsubmcp.core.mcp_inventory import build_inventory
+from codexsubmcp.core.models import McpRecord
+from codexsubmcp.core.system_snapshot import CodexRuntimeSnapshot, SystemSnapshot
 
 
-def test_scan_configured_sources_returns_configured_records(tmp_path):
-    config_path = tmp_path / "codex_mcp.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "memory": {
-                        "command": "npx",
-                        "args": ["-y", "@modelcontextprotocol/server-memory"],
-                    }
-                }
-            }
+def _snapshot() -> SystemSnapshot:
+    return SystemSnapshot(
+        snapshot_id="snapshot-mcp",
+        captured_at=datetime.fromisoformat("2026-03-28T12:00:00"),
+        codex=CodexRuntimeSnapshot(
+            global_config_path=Path("C:/Users/test/.codex/config.toml"),
+            project_config_path=None,
+            state_db_path=Path("C:/Users/test/.codex/state_5.sqlite"),
+            open_subagent_count=2,
         ),
-        encoding="utf-8",
+        configured_mcps=(
+            McpRecord(
+                name="memory",
+                category="configured",
+                source="codex_global_config",
+                command="npx",
+                args=("-y", "@modelcontextprotocol/server-memory"),
+                type="stdio",
+            ),
+        ),
+        processes=(),
     )
 
-    records = scan_configured_sources([config_path])
 
-    assert len(records) == 1
-    assert records[0].category == "configured"
-    assert records[0].source == "codex_config"
-    assert records[0].name == "memory"
-
-
-def test_scan_npm_global_packages_returns_installed_candidates(monkeypatch):
-    def fake_run(*_args, **_kwargs):
-        class Result:
-            returncode = 0
-            stdout = json.dumps(
-                {
-                    "dependencies": {
-                        "@modelcontextprotocol/server-filesystem": {"version": "1.0.0"},
-                        "left-pad": {"version": "1.3.0"},
-                    }
-                }
-            )
-            stderr = ""
-
-        return Result()
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    records = scan_npm_global_packages()
-
-    assert len(records) == 1
-    assert records[0].category == "installed_candidate"
-    assert records[0].source == "npm_global"
-    assert records[0].name == "@modelcontextprotocol/server-filesystem"
-
-
-def test_scan_mcp_cli_returns_grouped_json(monkeypatch, capsys):
-    monkeypatch.setattr(
-        "codexsubmcp.cli.scan_configured_sources",
-        lambda _config_paths=None: [
-            type(
-                "Record",
-                (),
-                {
-                    "name": "memory",
-                    "category": "configured",
-                    "source": "codex_config",
-                    "command": "npx",
-                    "path": None,
-                    "version": None,
-                    "confidence": "high",
-                    "notes": None,
-                },
-            )()
-        ],
+def _analysis() -> AnalysisResult:
+    return AnalysisResult(
+        snapshot_id="snapshot-mcp",
+        analyzed_at=datetime.fromisoformat("2026-03-28T12:01:00"),
+        summary=AnalysisSummary(
+            configured_mcp_count=1,
+            running_mcp_instance_count=2,
+            open_subagent_count=2,
+            drift_missing_runtime_count=0,
+            drift_unconfigured_runtime_count=1,
+            live_suite_count=1,
+            orphan_suite_count=0,
+            stale_attached_branch_count=1,
+        ),
+        running_mcps=(
+            RunningMcpSummary(
+                tool_signature="agentation-mcp",
+                instance_count=2,
+                live_codex_pid_count=1,
+                has_stale=True,
+            ),
+        ),
+        configured_not_running=(),
+        running_not_configured=("agentation-mcp",),
+        live_suites=(),
+        orphan_suites=(),
+        stale_attached_branches=(),
     )
-    monkeypatch.setattr("codexsubmcp.cli.scan_npm_global_packages", lambda: [])
-    monkeypatch.setattr("codexsubmcp.cli.scan_path_candidates", lambda: [])
-    monkeypatch.setattr("codexsubmcp.cli.scan_python_candidates", lambda: [])
+
+
+def test_build_inventory_returns_configured_running_and_drift_sections():
+    payload = build_inventory(
+        configured=list(_snapshot().configured_mcps),
+        running=list(_analysis().running_mcps),
+        drift={
+            "configured_not_running": [],
+            "running_not_configured": ["agentation-mcp"],
+        },
+    )
+
+    assert list(payload) == ["configured", "running", "drift"]
+    assert payload["configured"][0]["name"] == "memory"
+    assert payload["running"][0]["tool_signature"] == "agentation-mcp"
+    assert payload["drift"]["running_not_configured"] == ["agentation-mcp"]
+
+
+def test_scan_mcp_cli_returns_grouped_json_without_installed_candidates(monkeypatch, capsys):
+    monkeypatch.setattr("codexsubmcp.cli.build_system_snapshot", lambda **_kwargs: _snapshot())
+    monkeypatch.setattr("codexsubmcp.cli.analyze_snapshot", lambda *_args, **_kwargs: _analysis())
 
     exit_code = main(["scan", "mcp", "--format", "json"])
     payload = json.loads(capsys.readouterr().out)
 
     assert exit_code == 0
-    assert list(payload) == ["configured", "installed_candidates"]
+    assert list(payload) == ["configured", "running", "drift"]
     assert payload["configured"][0]["name"] == "memory"
-    assert payload["installed_candidates"] == []
-
-
-def test_scan_configured_sources_discovers_default_paths(monkeypatch, tmp_path):
-    config_path = tmp_path / "Claude" / "claude_desktop_config.json"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "filesystem": {
-                        "command": "npx",
-                        "args": ["-y", "@modelcontextprotocol/server-filesystem"],
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("APPDATA", str(tmp_path))
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
-    monkeypatch.setenv("USERPROFILE", str(tmp_path / "User"))
-
-    records = scan_configured_sources()
-
-    assert len(records) == 1
-    assert records[0].source == "claude_config"
-    assert records[0].name == "filesystem"
-
-
-def test_discover_config_paths_returns_known_existing_files(monkeypatch, tmp_path):
-    codex_path = tmp_path / "AppData" / "Roaming" / "Codex" / "mcp.json"
-    codex_path.parent.mkdir(parents=True, exist_ok=True)
-    codex_path.write_text("{}", encoding="utf-8")
-    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
-    monkeypatch.setenv("USERPROFILE", str(tmp_path))
-
-    paths = discover_config_paths()
-
-    assert codex_path in paths
+    assert payload["running"][0]["tool_signature"] == "agentation-mcp"
+    assert payload["drift"]["running_not_configured"] == ["agentation-mcp"]
+    assert "installed_candidates" not in payload

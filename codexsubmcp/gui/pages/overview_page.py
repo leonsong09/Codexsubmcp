@@ -23,40 +23,46 @@ class OverviewPage(QWidget):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.preview_button = QPushButton("立即预览")
-        self.cleanup_button = QPushButton("立即清理（管理员）")
+        self.refresh_button = QPushButton("刷新")
+        self.preview_button = QPushButton("预览清理")
+        self.cleanup_button = QPushButton("执行清理（管理员）")
         self.task_button = QPushButton("")
-        self.scan_button = QPushButton("扫描 MCP")
         self.preview_button.setProperty("accent", True)
         self.cleanup_button.setProperty("destructive", True)
+        self.refresh_button.setProperty("accent", True)
         self.task_button.setProperty("accent", True)
-        self.scan_button.setProperty("accent", True)
 
         self.task_summary_label = QLabel("")
         self.config_summary_label = QLabel("")
-        self.cleanup_summary_label = QLabel("最近尚未执行清理。")
+        self.cleanup_summary_label = QLabel("请先刷新以载入当前状态。")
         self.mcp_summary_label = QLabel("")
+        self.state_summary_label = QLabel("当前态：尚未刷新")
+        self.latest_result_label = QLabel("最近清理：尚无结果")
+        self.lifetime_stats_label = QLabel("累计统计：尚无数据")
+        self.refresh_status_label = QLabel("最近刷新：尚未刷新")
+        self._runtime_summary: dict[str, object] = {}
+        self._cleanable_target_count = 0
 
-        self.preview_button.clicked.connect(lambda: task_runner.dispatch("dry-run", headless=False))
+        self.refresh_button.clicked.connect(lambda: task_runner.dispatch("refresh", headless=False))
+        self.preview_button.clicked.connect(lambda: task_runner.dispatch("preview", headless=False))
         self.cleanup_button.clicked.connect(lambda: task_runner.dispatch("cleanup", headless=False, yes=True))
-        self.task_button.clicked.connect(
-            lambda: task_runner.dispatch("task-install", interval=int(config.get("interval_minutes") or 10))
-        )
-        self.scan_button.clicked.connect(lambda: task_runner.dispatch("scan-mcp"))
 
         actions = QGridLayout()
         actions.setHorizontalSpacing(10)
         actions.setVerticalSpacing(10)
-        actions.addWidget(self.preview_button, 0, 0)
-        actions.addWidget(self.cleanup_button, 0, 1)
-        actions.addWidget(self.task_button, 1, 0)
-        actions.addWidget(self.scan_button, 1, 1)
+        actions.addWidget(self.refresh_button, 0, 0)
+        actions.addWidget(self.preview_button, 0, 1)
+        actions.addWidget(self.cleanup_button, 0, 2)
 
         layout = QVBoxLayout()
         layout.addWidget(QLabel("总览"))
         layout.addWidget(self.task_summary_label)
         layout.addWidget(self.config_summary_label)
+        layout.addWidget(self.refresh_status_label)
+        layout.addWidget(self.state_summary_label)
         layout.addWidget(self.cleanup_summary_label)
+        layout.addWidget(self.latest_result_label)
+        layout.addWidget(self.lifetime_stats_label)
         layout.addWidget(self.mcp_summary_label)
         layout.addLayout(actions)
         layout.addStretch(1)
@@ -65,10 +71,10 @@ class OverviewPage(QWidget):
         self.set_task_status(task_status)
         self.set_config_summary(config)
         self.set_inventory_summary(inventory)
+        self.set_workflow_enabled(False)
 
     def set_task_status(self, task_status: TaskStatus) -> None:
         self.task_summary_label.setText(f"计划任务：{_task_text(task_status)}")
-        self.task_button.setText("重装任务（管理员）" if task_status.installed else "安装任务（管理员）")
 
     def set_config_summary(self, config: dict[str, object]) -> None:
         self.config_summary_label.setText(
@@ -79,6 +85,13 @@ class OverviewPage(QWidget):
         )
 
     def set_cleanup_summary(self, report: dict[str, object]) -> None:
+        summary = report.get("summary") or {}
+        if isinstance(summary, dict) and "target_count" in summary:
+            self.cleanup_summary_label.setText(
+                f"最近结果：目标 {summary.get('target_count', 0)} 个 | "
+                f"失败 {summary.get('failed_target_count', 0)} 个"
+            )
+            return
         suite_count = len(report.get("suites", []))
         cleanup_target_count = len(report.get("cleanup_targets", []))
         action_count = len(report.get("actions", []))
@@ -88,5 +101,56 @@ class OverviewPage(QWidget):
 
     def set_inventory_summary(self, inventory: dict[str, list[dict[str, object]]]) -> None:
         configured = len(inventory.get("configured", []))
+        running = len(inventory.get("running", []))
+        if "running" in inventory:
+            self.mcp_summary_label.setText(f"MCP 摘要：已配置 {configured} 项 | 运行中 {running} 类")
+            return
         installed = len(inventory.get("installed_candidates", []))
         self.mcp_summary_label.setText(f"MCP 摘要：已配置 {configured} 项 | 候选 {installed} 项")
+
+    def set_workflow_enabled(self, enabled: bool) -> None:
+        self.preview_button.setEnabled(enabled)
+        self.cleanup_button.setEnabled(enabled)
+
+    def set_refresh_summary(self, payload: dict[str, object]) -> None:
+        self._runtime_summary = dict(payload.get("summary") or {})
+        self.refresh_status_label.setText(
+            f"最近刷新：snapshot={payload.get('snapshot_id') or '-'} | captured_at={payload.get('captured_at') or '-'}"
+        )
+        self._render_state_summary()
+
+    def set_preview_summary(self, payload: dict[str, object]) -> None:
+        summary = payload.get("summary") or {}
+        self._cleanable_target_count = int(summary.get("target_count") or 0) if isinstance(summary, dict) else 0
+        self._render_state_summary()
+
+    def set_cleanup_result(self, payload: dict[str, object]) -> None:
+        summary = payload.get("summary") or {}
+        if not isinstance(summary, dict):
+            self.latest_result_label.setText("最近清理：无有效结果")
+            return
+        state = "成功" if summary.get("success") else "失败"
+        self.latest_result_label.setText(
+            f"最近清理{state}：+suite {summary.get('closed_suite_count', 0)} | "
+            f"+stale {summary.get('closed_stale_branch_count', 0)} | "
+            f"+process {summary.get('killed_process_count', 0)}"
+        )
+
+    def set_lifetime_stats(self, stats: dict[str, object]) -> None:
+        self.lifetime_stats_label.setText(
+            f"累计 cleanup {stats.get('total_cleanup_count', 0)} | "
+            f"suite {stats.get('total_closed_suite_count', 0)} | "
+            f"stale {stats.get('total_closed_stale_branch_count', 0)} | "
+            f"MCP {stats.get('total_killed_mcp_instance_count', 0)} | "
+            f"process {stats.get('total_killed_process_count', 0)} | "
+            f"last={stats.get('last_cleanup_at') or '-'}"
+        )
+
+    def _render_state_summary(self) -> None:
+        self.state_summary_label.setText(
+            f"当前态：运行中子代理 {self._runtime_summary.get('open_subagent_count', 0)} | "
+            f"运行中 suite {self._runtime_summary.get('live_suite_count', 0)} | "
+            f"运行中 MCP 实例 {self._runtime_summary.get('running_mcp_instance_count', 0)} | "
+            f"已配置 MCP {self._runtime_summary.get('configured_mcp_count', 0)} | "
+            f"可清理目标 {self._cleanable_target_count}"
+        )

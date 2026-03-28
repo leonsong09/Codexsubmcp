@@ -20,9 +20,17 @@ from PySide6.QtWidgets import (
 )
 
 from codexsubmcp.app_paths import build_runtime_paths, ensure_runtime_config
-from codexsubmcp.core.cleanup import run_cleanup
+from codexsubmcp.core.analysis import analyze_snapshot
+from codexsubmcp.core.cleanup import build_cleanup_preview, execute_cleanup_preview
 from codexsubmcp.core.config import load_config
 from codexsubmcp.core.mcp_inventory import build_inventory
+from codexsubmcp.core.runtime_logs import (
+    load_lifetime_stats,
+    write_cleanup_log,
+    write_preview_log,
+    write_refresh_log,
+)
+from codexsubmcp.core.system_snapshot import build_system_snapshot
 from codexsubmcp.gui.pages.cleanup_page import CleanupPage
 from codexsubmcp.gui.pages.config_page import ConfigPage
 from codexsubmcp.gui.pages.log_page import LogPage
@@ -33,13 +41,6 @@ from codexsubmcp.gui.task_runner import TaskRunner
 from codexsubmcp.gui.theme import apply_theme
 from codexsubmcp.platform.windows.elevation import is_user_admin, run_elevated
 from codexsubmcp.platform.windows.install_artifact import STABLE_EXE_NAME, install_current_executable
-from codexsubmcp.platform.windows.mcp_sources import (
-    scan_configured_sources,
-    scan_npm_global_packages,
-    scan_path_candidates,
-    scan_python_candidates,
-)
-from codexsubmcp.platform.windows.processes import load_windows_processes
 from codexsubmcp.platform.windows.tasks import (
     DEFAULT_TASK_NAME,
     TaskStatus,
@@ -104,11 +105,14 @@ class MainWindow(QMainWindow):
         runtime_paths = build_runtime_paths()
         resolved_config_path = config_path or ensure_runtime_config()
         resolved_config = config or load_config(runtime_path=resolved_config_path)
-        resolved_inventory = inventory or {"configured": [], "installed_candidates": []}
+        resolved_inventory = inventory or {"configured": [], "running": [], "drift": {}}
         resolved_log_dir = log_dir or runtime_paths.logs
         resolved_export_dir = export_dir or runtime_paths.exports
         self.config_path = resolved_config_path
         self.log_dir = resolved_log_dir
+        self._latest_snapshot = None
+        self._latest_analysis = None
+        self._latest_preview = None
         self.task_status = task_status or TaskStatus(
             task_name=DEFAULT_TASK_NAME,
             installed=False,
@@ -219,6 +223,8 @@ class MainWindow(QMainWindow):
 
         apply_theme(self)
         self._set_top_task_status(self.task_status)
+        self._set_workflow_enabled(False)
+        self.overview_page.set_lifetime_stats(self._stats_payload())
         self._append_activity("READY shell initialized")
 
     def _default_install_source(self) -> Path | None:
@@ -242,62 +248,48 @@ class MainWindow(QMainWindow):
         self.task_status = get_task_status(task_name=DEFAULT_TASK_NAME)
         return self.task_status
 
-    def _refresh_inventory(self) -> None:
-        return build_inventory(
-            configured=scan_configured_sources(),
-            installed_candidates=[
-                *scan_npm_global_packages(),
-                *scan_path_candidates(),
-                *scan_python_candidates(),
-            ],
-        )
-
-    def _run_cleanup(self, *, dry_run: bool) -> None:
+    def _run_refresh(self) -> dict[str, object]:
         config = load_config(runtime_path=self.config_path)
-        report = run_cleanup(
-            load_windows_processes(),
-            config=config,
-            dry_run=dry_run,
-            kill_runner=self._run_taskkill,
+        snapshot = build_system_snapshot()
+        analysis = analyze_snapshot(snapshot, config=config)
+        inventory = build_inventory(
+            configured=list(snapshot.configured_mcps),
+            running=list(analysis.running_mcps),
+            drift={
+                "configured_not_running": list(analysis.configured_not_running),
+                "running_not_configured": list(analysis.running_not_configured),
+            },
         )
-        cleanup_target_ids = {suite.suite_id for suite in report.cleanup_targets}
-        payload = {
-            "suites": [
-                {
-                    "suite_id": suite.suite_id,
-                    "classification": suite.classification,
-                    "root_pid": suite.root_pid,
-                    "process_count": len(suite.processes),
-                    "created_at": suite.created_at.isoformat(),
-                    "process_ids": suite.process_ids,
-                    "reason": _cleanup_reason(suite.classification),
-                    "risk_hint": _cleanup_risk_hint(
-                        classification=suite.classification,
-                        targeted=suite.suite_id in cleanup_target_ids,
-                        dry_run=dry_run,
-                    ),
-                    "command_summaries": [
-                        process.command_line
-                        for process in suite.processes
-                        if process.command_line
-                    ],
-                    "processes": [
-                        {
-                            "pid": process.pid,
-                            "ppid": process.ppid,
-                            "name": process.name,
-                            "created_at": process.created_at.isoformat(),
-                            "command_line": process.command_line,
-                        }
-                        for process in suite.processes
-                    ],
-                }
-                for suite in report.suites
-            ],
-            "cleanup_targets": list(cleanup_target_ids),
-            "actions": report.actions,
+        log_path = write_refresh_log(snapshot=snapshot, analysis=analysis, log_dir=self.log_dir)
+        self._latest_snapshot = snapshot
+        self._latest_analysis = analysis
+        self._latest_preview = None
+        return {
+            **json.loads(log_path.read_text(encoding="utf-8")),
+            "inventory": inventory,
+            "log_path": str(log_path),
         }
-        return payload
+
+    def _run_preview(self) -> dict[str, object]:
+        if self._latest_analysis is None:
+            raise RuntimeError("请先刷新再预览清理。")
+        preview = build_cleanup_preview(self._latest_analysis)
+        log_path = write_preview_log(preview=preview, log_dir=self.log_dir)
+        self._latest_preview = preview
+        return {
+            **json.loads(log_path.read_text(encoding="utf-8")),
+            "log_path": str(log_path),
+        }
+
+    def _run_cleanup(self) -> dict[str, object]:
+        if self._latest_preview is None:
+            raise RuntimeError("请先预览清理。")
+        result = execute_cleanup_preview(self._latest_preview, kill_runner=self._run_taskkill)
+        log_path = write_cleanup_log(result=result, log_dir=self.log_dir)
+        return {
+            **json.loads(log_path.read_text(encoding="utf-8")),
+            "log_path": str(log_path),
+        }
 
     @staticmethod
     def _run_taskkill(pid: int) -> None:
@@ -315,11 +307,14 @@ class MainWindow(QMainWindow):
     def _handle_request(self, command: str, payload: dict) -> None:
         if not hasattr(self.task_runner, "run_task"):
             return
-        if command == "dry-run":
-            self.task_runner.run_task(command, lambda: self._cleanup_or_report(dry_run=True))
+        if command == "refresh":
+            self.task_runner.run_task(command, self._run_refresh)
+            return
+        if command == "preview":
+            self.task_runner.run_task(command, self._run_preview)
             return
         if command == "cleanup":
-            self.task_runner.run_task(command, lambda: self._cleanup_or_report(dry_run=False))
+            self.task_runner.run_task(command, self._cleanup_or_report)
             return
         if command == "task-status":
             self.task_runner.run_task(command, self._refresh_task_status)
@@ -349,9 +344,6 @@ class MainWindow(QMainWindow):
         if command == "task-run-once":
             self.task_runner.run_task(command, self._run_once_and_refresh)
             return
-        if command == "scan-mcp":
-            self.task_runner.run_task(command, self._refresh_inventory)
-
     def _install_and_refresh(self, source: Path, *, interval: int) -> TaskStatus:
         installed_path = install_current_executable(source)
         register_task(task_name=DEFAULT_TASK_NAME, executable_path=installed_path, interval_minutes=interval)
@@ -401,12 +393,16 @@ class MainWindow(QMainWindow):
         return self._run_elevated_task(["task", "disable", "--task-name", DEFAULT_TASK_NAME])
 
     def _run_once_and_refresh(self) -> TaskStatus:
-        self._run_cleanup(dry_run=False)
+        self._run_refresh()
+        self._run_preview()
+        self._run_cleanup()
         return self._refresh_task_status()
 
-    def _cleanup_or_report(self, *, dry_run: bool) -> dict[str, object]:
-        if dry_run or is_user_admin():
-            return self._run_cleanup(dry_run=dry_run)
+    def _cleanup_or_report(self, *, dry_run: bool | None = None) -> dict[str, object]:
+        if self._latest_preview is None:
+            raise RuntimeError("请先预览清理。")
+        if is_user_admin():
+            return self._run_cleanup()
         executable_path, prefix_arguments = self._elevation_entrypoint()
         runtime_paths = build_runtime_paths()
         runtime_paths.cache.mkdir(parents=True, exist_ok=True)
@@ -449,19 +445,48 @@ class MainWindow(QMainWindow):
     def _handle_started(self, command: str) -> None:
         self._set_top_activity(f"{command} 执行中")
         self._append_activity(f"START {command}")
-        if command in {"dry-run", "cleanup"}:
+        if command in {"preview", "cleanup"}:
             self.cleanup_page.set_busy("执行中...")
         elif command.startswith("task-"):
             self.task_page.set_busy("执行中...")
-        elif command == "scan-mcp":
-            self.mcp_page.set_busy("扫描中...")
+        elif command == "refresh":
+            self.mcp_page.set_busy("刷新中...")
+            self.cleanup_page.set_summary("刷新中...")
 
     def _handle_succeeded(self, command: str, result: object) -> None:
         self._set_top_activity(f"{command} 成功")
         self._append_activity(f"SUCCESS {command}")
-        if command in {"dry-run", "cleanup"} and isinstance(result, dict):
-            self.cleanup_page.set_report(result)
+        if command == "refresh" and isinstance(result, dict):
+            inventory = result.get("inventory") or {"configured": [], "running": [], "drift": {}}
+            if isinstance(inventory, dict):
+                self.mcp_page.set_inventory(inventory)
+                self.overview_page.set_inventory_summary(inventory)
+            self.overview_page.set_refresh_summary(result)
+            self.cleanup_page.set_summary("已刷新当前状态，可先预览清理。")
             self.overview_page.set_cleanup_summary(result)
+            self.overview_page.set_lifetime_stats(self._stats_payload())
+            self._set_workflow_enabled(True)
+            self.log_page.refresh_logs()
+            return
+        if command == "preview" and isinstance(result, dict):
+            self.overview_page.set_preview_summary(result)
+            self.cleanup_page.set_preview(result)
+            self.cleanup_page.set_summary(
+                f"预览完成：目标 {((result.get('summary') or {}).get('target_count') or 0)} 个"
+            )
+            self.overview_page.set_cleanup_summary(result)
+            self.log_page.refresh_logs()
+            return
+        if command == "cleanup" and isinstance(result, dict):
+            self.overview_page.set_cleanup_result(result)
+            self.overview_page.set_lifetime_stats(self._stats_payload())
+            self.cleanup_page.set_summary(
+                f"清理完成：失败 {((result.get('summary') or {}).get('failed_target_count') or 0)} 个"
+            )
+            self.overview_page.set_cleanup_summary(result)
+            self.log_page.refresh_logs()
+            if ((result.get("summary") or {}).get("success") and hasattr(self.task_runner, "run_task")):
+                self.task_runner.run_task("refresh", self._run_refresh)
             return
         if command.startswith("task-") and isinstance(result, TaskStatus):
             self.task_status = result
@@ -469,18 +494,15 @@ class MainWindow(QMainWindow):
             self.overview_page.set_task_status(result)
             self._set_top_task_status(result)
             return
-        if command == "scan-mcp" and isinstance(result, dict):
-            self.mcp_page.set_inventory(result)
-            self.overview_page.set_inventory_summary(result)
 
     def _handle_failed(self, command: str, message: str) -> None:
         self._set_top_activity(f"{command} 失败")
         self._append_activity(f"FAILED {command}: {message}")
-        if command in {"dry-run", "cleanup"}:
+        if command in {"preview", "cleanup"}:
             self.cleanup_page.set_summary(message)
         elif command.startswith("task-"):
             self.task_page.set_error(message)
-        elif command == "scan-mcp":
+        elif command == "refresh":
             self.mcp_page.set_busy(message)
 
     def _handle_navigation_changed(self, index: int) -> None:
@@ -504,3 +526,20 @@ class MainWindow(QMainWindow):
     def _append_activity(self, message: str) -> None:
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.activity_log_view.appendPlainText(f"{timestamp} {message}")
+
+    def _set_workflow_enabled(self, enabled: bool) -> None:
+        self.overview_page.set_workflow_enabled(enabled)
+        self.cleanup_page.set_actions_enabled(preview_enabled=enabled, cleanup_enabled=enabled)
+
+    def _stats_payload(self) -> dict[str, object]:
+        stats = load_lifetime_stats(log_dir=self.log_dir)
+        return {
+            "total_refresh_count": stats.total_refresh_count,
+            "total_preview_count": stats.total_preview_count,
+            "total_cleanup_count": stats.total_cleanup_count,
+            "total_closed_suite_count": stats.total_closed_suite_count,
+            "total_closed_stale_branch_count": stats.total_closed_stale_branch_count,
+            "total_killed_mcp_instance_count": stats.total_killed_mcp_instance_count,
+            "total_killed_process_count": stats.total_killed_process_count,
+            "last_cleanup_at": stats.last_cleanup_at.isoformat() if stats.last_cleanup_at else None,
+        }

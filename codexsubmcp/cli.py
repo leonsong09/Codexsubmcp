@@ -4,24 +4,22 @@ import argparse
 import json
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
 from codexsubmcp.app_paths import build_runtime_paths, ensure_runtime_config
-from codexsubmcp.core.cleanup import run_cleanup
+from codexsubmcp.core.analysis import analyze_snapshot
+from codexsubmcp.core.cleanup import build_cleanup_preview, execute_cleanup_preview
 from codexsubmcp.core.config import DEFAULT_CONFIG, load_config
 from codexsubmcp.core.mcp_inventory import build_inventory
+from codexsubmcp.core.runtime_logs import (
+    write_cleanup_log,
+    write_preview_log,
+    write_refresh_log,
+)
+from codexsubmcp.core.system_snapshot import build_system_snapshot
 from codexsubmcp.gui.app import launch_gui
 from codexsubmcp.platform.windows.install_artifact import STABLE_EXE_NAME, install_current_executable
-from codexsubmcp.platform.windows.processes import load_windows_processes
-from codexsubmcp.platform.windows.mcp_sources import (
-    discover_config_paths,
-    scan_configured_sources,
-    scan_npm_global_packages,
-    scan_path_candidates,
-    scan_python_candidates,
-)
 from codexsubmcp.platform.windows.tasks import (
     DEFAULT_TASK_NAME,
     get_task_status,
@@ -48,54 +46,29 @@ def _resolve_config_path(config_path: Path | None) -> Path:
     return ensure_runtime_config()
 
 
-def _write_runtime_log(command_name: str, payload: dict[str, object]) -> Path:
-    paths = build_runtime_paths()
-    paths.logs.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_path = paths.logs / f"{command_name}-{timestamp}.json"
-    log_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return log_path
+def _write_report_file(report_file: Path | None, payload: dict[str, object]) -> None:
+    if report_file is None:
+        return
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+    report_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _report_payload(command_name: str, *, dry_run: bool, report) -> dict[str, object]:
-    return {
-        "command": command_name,
-        "dry_run": dry_run,
-        "suite_count": len(report.suites),
-        "cleanup_target_count": len(report.cleanup_targets),
-        "actions": report.actions,
-    }
+def _payload_from_log(log_path: Path) -> dict[str, object]:
+    payload = json.loads(log_path.read_text(encoding="utf-8"))
+    payload["log_path"] = str(log_path)
+    return payload
 
 
-def _run_cleanup_command(
-    command_name: str,
-    *,
-    config_path: Path | None,
-    dry_run: bool,
-    headless: bool,
-    report_file: Path | None = None,
-) -> int:
+def _build_snapshot_and_analysis(config_path: Path | None) -> tuple[object, object]:
     config = load_config(runtime_path=_resolve_config_path(config_path))
-    report = run_cleanup(
-        load_windows_processes(),
-        config=config,
-        dry_run=dry_run,
-        kill_runner=_run_taskkill,
-    )
-    payload = _report_payload(command_name, dry_run=dry_run, report=report)
-    if headless:
-        payload["log_path"] = str(_write_runtime_log(command_name, payload))
-        if report_file is not None:
-            report_file.parent.mkdir(parents=True, exist_ok=True)
-            report_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print(json.dumps(payload, ensure_ascii=False))
-        return 0
+    snapshot = build_system_snapshot()
+    analysis = analyze_snapshot(snapshot, config=config)
+    return snapshot, analysis
 
-    print(f"发现 {payload['suite_count']} 套候选 MCP，其中需要清理 {payload['cleanup_target_count']} 套。")
-    for action in report.actions:
-        print(f"- {action}")
-    if not report.actions:
-        print("未发现需要清理的超额孤儿套件。")
+
+def _emit_headless_payload(payload: dict[str, object], report_file: Path | None) -> int:
+    _write_report_file(report_file, payload)
+    print(json.dumps(payload, ensure_ascii=False))
     return 0
 
 
@@ -103,34 +76,44 @@ def _cmd_gui(_args: argparse.Namespace) -> int:
     return launch_gui()
 
 
-def _cmd_dry_run(args: argparse.Namespace) -> int:
-    return _run_cleanup_command(
-        "dry-run",
-        config_path=args.config,
-        dry_run=True,
-        headless=args.headless,
-        report_file=args.report_file,
-    )
+def _cmd_refresh(args: argparse.Namespace) -> int:
+    snapshot, analysis = _build_snapshot_and_analysis(args.config)
+    log_path = write_refresh_log(snapshot=snapshot, analysis=analysis)
+    payload = _payload_from_log(log_path)
+    if args.headless:
+        return _emit_headless_payload(payload, args.report_file)
+    print(payload)
+    return 0
+
+
+def _cmd_preview(args: argparse.Namespace) -> int:
+    _snapshot, analysis = _build_snapshot_and_analysis(args.config)
+    preview = build_cleanup_preview(analysis)
+    log_path = write_preview_log(preview=preview)
+    payload = _payload_from_log(log_path)
+    if args.headless:
+        return _emit_headless_payload(payload, args.report_file)
+    print(payload)
+    return 0
 
 
 def _cmd_cleanup(args: argparse.Namespace) -> int:
-    return _run_cleanup_command(
-        "cleanup",
-        config_path=args.config,
-        dry_run=not args.yes,
-        headless=args.headless,
-        report_file=args.report_file,
-    )
+    if not args.yes:
+        return _cmd_preview(args)
+    _snapshot, analysis = _build_snapshot_and_analysis(args.config)
+    preview = build_cleanup_preview(analysis)
+    result = execute_cleanup_preview(preview, kill_runner=_run_taskkill)
+    log_path = write_cleanup_log(result=result)
+    payload = _payload_from_log(log_path)
+    if args.headless:
+        return _emit_headless_payload(payload, args.report_file)
+    print(payload)
+    return 0
 
 
 def _cmd_run_once(args: argparse.Namespace) -> int:
-    return _run_cleanup_command(
-        "run-once",
-        config_path=args.config,
-        dry_run=False,
-        headless=args.headless,
-        report_file=args.report_file,
-    )
+    args.yes = True
+    return _cmd_cleanup(args)
 
 
 def _cmd_task(_args: argparse.Namespace) -> int:
@@ -142,13 +125,14 @@ def _cmd_scan(_args: argparse.Namespace) -> int:
 
 
 def _cmd_scan_mcp(args: argparse.Namespace) -> int:
+    snapshot, analysis = _build_snapshot_and_analysis(getattr(args, "config", None))
     payload = build_inventory(
-        configured=scan_configured_sources(args.config_paths),
-        installed_candidates=[
-            *scan_npm_global_packages(),
-            *scan_path_candidates(),
-            *scan_python_candidates(),
-        ],
+        configured=list(snapshot.configured_mcps),
+        running=list(analysis.running_mcps),
+        drift={
+            "configured_not_running": list(analysis.configured_not_running),
+            "running_not_configured": list(analysis.running_not_configured),
+        },
     )
     if args.format == "json":
         print(json.dumps(payload, ensure_ascii=False))
@@ -233,7 +217,13 @@ def build_parser() -> argparse.ArgumentParser:
     gui_parser = subparsers.add_parser("gui")
     gui_parser.set_defaults(func=_cmd_gui)
 
-    for name, func in (("dry-run", _cmd_dry_run), ("cleanup", _cmd_cleanup), ("run-once", _cmd_run_once)):
+    for name, func in (
+        ("refresh", _cmd_refresh),
+        ("preview", _cmd_preview),
+        ("dry-run", _cmd_preview),
+        ("cleanup", _cmd_cleanup),
+        ("run-once", _cmd_run_once),
+    ):
         command_parser = subparsers.add_parser(name)
         command_parser.add_argument("--config", type=Path)
         command_parser.add_argument("--headless", action="store_true")

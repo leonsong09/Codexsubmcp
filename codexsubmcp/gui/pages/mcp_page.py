@@ -17,20 +17,22 @@ from PySide6.QtWidgets import (
 
 
 def _build_list_label(record: dict[str, object]) -> str:
+    if "tool_signature" in record:
+        return (
+            f"{record.get('tool_signature')} | instances={record.get('instance_count')} | "
+            f"live_codex={record.get('live_codex_pid_count')} | stale={record.get('has_stale')}"
+        )
     summary = " | ".join(
         part
         for part in [
             str(record.get("name") or ""),
             str(record.get("source") or ""),
-            str(record.get("version") or ""),
-            str(record.get("confidence") or ""),
+            str(record.get("type") or ""),
         ]
         if part
     )
-    location = str(record.get("path") or record.get("command") or record.get("notes") or "").strip()
-    if not location:
-        return summary
-    return f"{summary}\n{location}"
+    command = " ".join([str(record.get("command") or ""), *[str(item) for item in record.get("args") or []]]).strip()
+    return f"{summary}\n{command}".strip()
 
 
 class McpPage(QWidget):
@@ -45,37 +47,39 @@ class McpPage(QWidget):
         super().__init__(parent)
         self.export_dir = export_dir or Path.cwd()
         self.configured_list = QListWidget()
-        self.installed_list = QListWidget()
+        self.running_list = QListWidget()
         self.result_tabs = QTabWidget()
         self.refresh_button = QPushButton("刷新 MCP")
         self.copy_button = QPushButton("复制结果")
         self.export_button = QPushButton("导出结果")
         self.refresh_button.setProperty("accent", True)
         self.status_label = QLabel("")
+        self.drift_label = QLabel("")
         self.detail_view = QPlainTextEdit()
         self.detail_view.setReadOnly(True)
         self._configured_records: list[dict[str, object]] = []
-        self._installed_records: list[dict[str, object]] = []
+        self._running_records: list[dict[str, object]] = []
+        self._drift: dict[str, object] = {}
 
         if task_runner is not None:
-            self.refresh_button.clicked.connect(lambda: task_runner.dispatch("scan-mcp"))
+            self.refresh_button.clicked.connect(lambda: task_runner.dispatch("refresh"))
         self.copy_button.clicked.connect(self.copy_current_results)
         self.export_button.clicked.connect(self.export_current_results)
         self.configured_list.currentRowChanged.connect(self._show_configured_detail)
-        self.installed_list.currentRowChanged.connect(self._show_installed_detail)
+        self.running_list.currentRowChanged.connect(self._show_running_detail)
 
         configured_tab = QWidget()
         configured_layout = QVBoxLayout()
         configured_layout.addWidget(self.configured_list)
         configured_tab.setLayout(configured_layout)
 
-        installed_tab = QWidget()
-        installed_layout = QVBoxLayout()
-        installed_layout.addWidget(self.installed_list)
-        installed_tab.setLayout(installed_layout)
+        running_tab = QWidget()
+        running_layout = QVBoxLayout()
+        running_layout.addWidget(self.running_list)
+        running_tab.setLayout(running_layout)
 
-        self.result_tabs.addTab(configured_tab, "已配置可用")
-        self.result_tabs.addTab(installed_tab, "疑似已安装")
+        self.result_tabs.addTab(configured_tab, "已配置")
+        self.result_tabs.addTab(running_tab, "运行中")
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(10)
@@ -90,6 +94,7 @@ class McpPage(QWidget):
         layout = QVBoxLayout()
         layout.addLayout(toolbar)
         layout.addWidget(self.status_label)
+        layout.addWidget(self.drift_label)
         layout.addLayout(body_layout)
         self.setLayout(layout)
 
@@ -97,25 +102,33 @@ class McpPage(QWidget):
 
     def set_inventory(self, inventory: dict[str, list[dict[str, object]]]) -> None:
         self._configured_records = list(inventory.get("configured", []))
-        self._installed_records = list(inventory.get("installed_candidates", []))
+        self._running_records = list(inventory.get("running", []))
+        self._drift = dict(inventory.get("drift") or {})
         self.configured_list.clear()
-        self.installed_list.clear()
+        self.running_list.clear()
         for record in self._configured_records:
             self.configured_list.addItem(_build_list_label(record))
-        for record in self._installed_records:
-            self.installed_list.addItem(_build_list_label(record))
+        for record in self._running_records:
+            self.running_list.addItem(_build_list_label(record))
+        drift_total = len(self._drift.get("configured_not_running", [])) + len(
+            self._drift.get("running_not_configured", [])
+        )
         self.status_label.setText(
-            f"扫描完成：已配置 {len(self._configured_records)} 项，候选 {len(self._installed_records)} 项"
+            f"已刷新：已配置 {len(self._configured_records)} 项，运行中 {len(self._running_records)} 类，drift {drift_total} 项"
+        )
+        self.drift_label.setText(
+            f"configured_not_running={self._drift.get('configured_not_running', [])} | "
+            f"running_not_configured={self._drift.get('running_not_configured', [])}"
         )
         self.detail_view.clear()
         if self._configured_records:
             self.result_tabs.setCurrentIndex(0)
             self.configured_list.setCurrentRow(0)
-        elif self._installed_records:
+        elif self._running_records:
             self.result_tabs.setCurrentIndex(1)
-            self.installed_list.setCurrentRow(0)
+            self.running_list.setCurrentRow(0)
 
-    def set_busy(self, text: str = "扫描中...") -> None:
+    def set_busy(self, text: str = "刷新中...") -> None:
         self.status_label.setText(text)
 
     def copy_current_results(self) -> str:
@@ -131,22 +144,33 @@ class McpPage(QWidget):
         self.status_label.setText(f"已导出：{path}")
         return path
 
-    def _inventory_payload(self) -> dict[str, list[dict[str, object]]]:
+    def _inventory_payload(self) -> dict[str, object]:
         return {
             "configured": self._configured_records,
-            "installed_candidates": self._installed_records,
+            "running": self._running_records,
+            "drift": self._drift,
         }
 
     def _render_detail(self, record: dict[str, object]) -> None:
-        lines = [
-            f"name={record.get('name')}",
-            f"source={record.get('source')}",
-            f"version={record.get('version')}",
-            f"confidence={record.get('confidence')}",
-            f"command={record.get('command')}",
-            f"path={record.get('path')}",
-            f"notes={record.get('notes')}",
-        ]
+        if "tool_signature" in record:
+            lines = [
+                f"tool_signature={record.get('tool_signature')}",
+                f"instance_count={record.get('instance_count')}",
+                f"live_codex_pid_count={record.get('live_codex_pid_count')}",
+                f"has_stale={record.get('has_stale')}",
+            ]
+        else:
+            lines = [
+                f"name={record.get('name')}",
+                f"source={record.get('source')}",
+                f"type={record.get('type')}",
+                f"command={record.get('command')}",
+                f"args={record.get('args')}",
+                f"env_keys={record.get('env_keys')}",
+                f"startup_timeout_ms={record.get('startup_timeout_ms')}",
+                f"tool_timeout_sec={record.get('tool_timeout_sec')}",
+                f"path={record.get('path')}",
+            ]
         self.detail_view.setPlainText("\n".join(lines))
 
     def _show_configured_detail(self, row: int) -> None:
@@ -155,8 +179,8 @@ class McpPage(QWidget):
         self.result_tabs.setCurrentIndex(0)
         self._render_detail(self._configured_records[row])
 
-    def _show_installed_detail(self, row: int) -> None:
-        if row < 0 or row >= len(self._installed_records):
+    def _show_running_detail(self, row: int) -> None:
+        if row < 0 or row >= len(self._running_records):
             return
         self.result_tabs.setCurrentIndex(1)
-        self._render_detail(self._installed_records[row])
+        self._render_detail(self._running_records[row])

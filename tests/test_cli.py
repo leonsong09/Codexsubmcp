@@ -3,12 +3,21 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 from codexsubmcp.cli import main
+from codexsubmcp.core.analysis import AnalysisResult, AnalysisSummary
+from codexsubmcp.core.cleanup_workflow import (
+    CleanupPreview,
+    CleanupPreviewSummary,
+    CleanupResult,
+    CleanupResultSummary,
+)
 from codexsubmcp.core.config import DEFAULT_CONFIG
-from codexsubmcp.core.models import ProcessInfo
+from codexsubmcp.core.models import McpRecord, ProcessInfo
+from codexsubmcp.core.system_snapshot import CodexRuntimeSnapshot, SystemSnapshot
 from codexsubmcp.platform.windows.tasks import TaskStatus
 
 
@@ -28,6 +37,76 @@ def _proc(
     )
 
 
+def _snapshot() -> SystemSnapshot:
+    return SystemSnapshot(
+        snapshot_id="snapshot-cli",
+        captured_at=datetime.fromisoformat("2026-03-28T12:00:00"),
+        codex=CodexRuntimeSnapshot(
+            global_config_path=Path("C:/Users/test/.codex/config.toml"),
+            project_config_path=None,
+            state_db_path=Path("C:/Users/test/.codex/state_5.sqlite"),
+            open_subagent_count=2,
+        ),
+        configured_mcps=(
+            McpRecord(name="memory", category="configured", source="codex_global_config", command="npx"),
+        ),
+        processes=(),
+    )
+
+
+def _analysis() -> AnalysisResult:
+    return AnalysisResult(
+        snapshot_id="snapshot-cli",
+        analyzed_at=datetime.fromisoformat("2026-03-28T12:01:00"),
+        summary=AnalysisSummary(
+            configured_mcp_count=1,
+            running_mcp_instance_count=2,
+            open_subagent_count=2,
+            drift_missing_runtime_count=0,
+            drift_unconfigured_runtime_count=1,
+            live_suite_count=1,
+            orphan_suite_count=1,
+            stale_attached_branch_count=1,
+        ),
+        running_mcps=(),
+        configured_not_running=(),
+        running_not_configured=("agentation-mcp",),
+        live_suites=(),
+        orphan_suites=(),
+        stale_attached_branches=(),
+    )
+
+
+def _preview() -> CleanupPreview:
+    return CleanupPreview(
+        snapshot_id="snapshot-cli",
+        previewed_at=datetime.fromisoformat("2026-03-28T12:02:00"),
+        summary=CleanupPreviewSummary(
+            target_count=2,
+            orphan_suite_target_count=1,
+            stale_branch_target_count=1,
+        ),
+        targets=(),
+    )
+
+
+def _cleanup_result() -> CleanupResult:
+    return CleanupResult(
+        snapshot_id="snapshot-cli",
+        executed_at=datetime.fromisoformat("2026-03-28T12:03:00"),
+        summary=CleanupResultSummary(
+            success=True,
+            target_count=2,
+            failed_target_count=0,
+            closed_suite_count=1,
+            closed_stale_branch_count=1,
+            killed_mcp_instance_count=2,
+            killed_process_count=4,
+        ),
+        target_results=(),
+    )
+
+
 def test_module_help_lists_subcommands(project_root: Path = Path(__file__).resolve().parents[1]):
     result = subprocess.run(
         [sys.executable, "-m", "codexsubmcp", "--help"],
@@ -39,6 +118,8 @@ def test_module_help_lists_subcommands(project_root: Path = Path(__file__).resol
 
     assert result.returncode == 0
     assert "gui" in result.stdout
+    assert "refresh" in result.stdout
+    assert "preview" in result.stdout
     assert "run-once" in result.stdout
     assert "dry-run" in result.stdout
     assert "cleanup" in result.stdout
@@ -60,42 +141,45 @@ def test_main_without_args_launches_gui(monkeypatch, capsys):
     assert captured.out == ""
 
 
-def test_main_dry_run_headless_outputs_structured_json(monkeypatch, tmp_path, capsys):
+def test_main_refresh_headless_outputs_new_summary_fields(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    config_path = tmp_path / "config.json"
-    config = dict(DEFAULT_CONFIG)
-    config["max_suites"] = 1
-    config["candidate_patterns"] = ["agentation-mcp"]
-    config_path.write_text(json.dumps(config), encoding="utf-8")
+    monkeypatch.setattr("codexsubmcp.cli.build_system_snapshot", lambda **_kwargs: _snapshot())
+    monkeypatch.setattr("codexsubmcp.cli.analyze_snapshot", lambda *_args, **_kwargs: _analysis())
 
-    monkeypatch.setattr(
-        "codexsubmcp.cli.load_windows_processes",
-        lambda: [
-            _proc(210, 9999, "node.exe", "2026-03-24T09:00:00", "agentation-mcp server"),
-            _proc(211, 210, "node.exe", "2026-03-24T09:00:01", "node agentation-mcp"),
-            _proc(310, 9998, "node.exe", "2026-03-24T09:01:00", "agentation-mcp server"),
-            _proc(311, 310, "node.exe", "2026-03-24T09:01:01", "node agentation-mcp"),
-        ],
-    )
-
-    exit_code = main(["dry-run", "--headless", "--config", str(config_path)])
+    exit_code = main(["refresh", "--headless"])
     payload = json.loads(capsys.readouterr().out)
 
     assert exit_code == 0
-    assert payload["dry_run"] is True
-    assert payload["cleanup_target_count"] == 1
-    assert payload["actions"] == ["dry-run pid=210 processes=2"]
+    assert payload["kind"] == "refresh"
+    assert payload["summary"]["configured_mcp_count"] == 1
+    assert payload["summary"]["running_mcp_instance_count"] == 2
+
+
+def test_main_preview_headless_outputs_new_summary_fields(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("codexsubmcp.cli.build_system_snapshot", lambda **_kwargs: _snapshot())
+    monkeypatch.setattr("codexsubmcp.cli.analyze_snapshot", lambda *_args, **_kwargs: _analysis())
+    monkeypatch.setattr("codexsubmcp.cli.build_cleanup_preview", lambda *_args, **_kwargs: _preview())
+
+    exit_code = main(["preview", "--headless"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["kind"] == "preview"
+    assert payload["summary"]["target_count"] == 2
+    assert payload["summary"]["stale_branch_target_count"] == 1
 
 
 def test_main_cleanup_headless_writes_report_file(monkeypatch, tmp_path, capsys):
     config_path = tmp_path / "config.json"
     report_path = tmp_path / "cleanup-report.json"
     config_path.write_text(json.dumps(DEFAULT_CONFIG), encoding="utf-8")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
 
-    monkeypatch.setattr(
-        "codexsubmcp.cli.load_windows_processes",
-        lambda: [_proc(210, 9999, "node.exe", "2026-03-24T09:00:00", "agentation-mcp server")],
-    )
+    monkeypatch.setattr("codexsubmcp.cli.build_system_snapshot", lambda **_kwargs: _snapshot())
+    monkeypatch.setattr("codexsubmcp.cli.analyze_snapshot", lambda *_args, **_kwargs: _analysis())
+    monkeypatch.setattr("codexsubmcp.cli.build_cleanup_preview", lambda *_args, **_kwargs: _preview())
+    monkeypatch.setattr("codexsubmcp.cli.execute_cleanup_preview", lambda *_args, **_kwargs: _cleanup_result())
 
     exit_code = main(
         [
@@ -113,6 +197,10 @@ def test_main_cleanup_headless_writes_report_file(monkeypatch, tmp_path, capsys)
     assert exit_code == 0
     assert report_path.exists()
     assert json.loads(report_path.read_text(encoding="utf-8")) == payload
+    assert payload["kind"] == "cleanup"
+    assert payload["summary"]["success"] is True
+    assert payload["summary"]["closed_suite_count"] == 1
+    assert Path(payload["log_path"]).exists()
 
 
 def test_main_config_validate_returns_zero_for_valid_config(tmp_path):

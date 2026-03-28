@@ -28,47 +28,60 @@ class _LogRecord:
     action: str
     status: str
     content: str
+    summary: str
 
     @property
     def label(self) -> str:
-        return f"{self.action} | {self.status} | {self.path.name}"
+        return f"{self.action} | {self.status} | {self.summary}"
 
 
-def _infer_action(path: Path, payload: object) -> str:
-    if isinstance(payload, dict):
-        command = str(payload.get("command") or "").strip()
-        if command:
-            return command
-    stem = path.stem
-    for known_command in ("dry-run", "run-once", "cleanup"):
-        if stem.startswith(known_command):
-            return known_command
-    return stem.split("-", 1)[0] if "-" in stem else stem
+def _infer_action(payload: dict[str, object], path: Path) -> str:
+    return str(payload.get("kind") or path.stem.split("-", 1)[0] or "unknown")
 
 
-def _infer_status(payload: object) -> str:
-    if not isinstance(payload, dict):
-        return "unknown"
-    explicit = str(payload.get("status") or "").strip()
-    if explicit:
-        return explicit
-    if payload.get("error") or payload.get("ok") is False:
-        return "failure"
+def _infer_status(payload: dict[str, object]) -> str:
+    summary = payload.get("summary")
+    if isinstance(summary, dict) and "success" in summary:
+        return "success" if summary.get("success") else "failure"
     return "success"
 
 
+def _summary_text(action: str, payload: dict[str, object]) -> str:
+    summary = payload.get("summary") or {}
+    if not isinstance(summary, dict):
+        return payload.get("snapshot_id") or payload.get("previewed_at") or payload.get("executed_at") or "-"
+    if action == "refresh":
+        return (
+            f"子代理 {summary.get('open_subagent_count', 0)} / "
+            f"suite {summary.get('live_suite_count', 0)} / "
+            f"MCP {summary.get('running_mcp_instance_count', 0)}"
+        )
+    if action == "preview":
+        return f"目标 {summary.get('target_count', 0)} / stale {summary.get('stale_branch_target_count', 0)}"
+    if action == "cleanup":
+        return (
+            f"+suite {summary.get('closed_suite_count', 0)} / "
+            f"+stale {summary.get('closed_stale_branch_count', 0)} / "
+            f"+MCP {summary.get('killed_mcp_instance_count', 0)} / "
+            f"+process {summary.get('killed_process_count', 0)}"
+        )
+    return str(summary)
+
+
 def _build_record(path: Path) -> _LogRecord:
-    content = path.read_text(encoding="utf-8")
-    payload: object = None
     try:
-        payload = json.loads(content)
+        payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
-        payload = None
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    action = _infer_action(payload, path)
     return _LogRecord(
         path=path,
-        action=_infer_action(path, payload),
+        action=action,
         status=_infer_status(payload),
-        content=content,
+        content=json.dumps(payload, ensure_ascii=False, indent=2) if payload else path.read_text(encoding="utf-8"),
+        summary=_summary_text(action, payload),
     )
 
 
@@ -129,21 +142,9 @@ class LogPage(QWidget):
 
     def refresh_logs(self) -> None:
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        self._records = [
-            _build_record(path)
-            for path in sorted(self.log_dir.glob("*"), reverse=True)
-            if path.is_file()
-        ]
-        self._reset_filter_options(
-            self.action_filter,
-            _ALL_ACTIONS,
-            sorted({record.action for record in self._records}),
-        )
-        self._reset_filter_options(
-            self.status_filter,
-            _ALL_STATUSES,
-            sorted({record.status for record in self._records}),
-        )
+        self._records = [_build_record(path) for path in sorted(self.log_dir.glob("*.json"), reverse=True)]
+        self._reset_filter_options(self.action_filter, _ALL_ACTIONS, sorted({record.action for record in self._records}))
+        self._reset_filter_options(self.status_filter, _ALL_STATUSES, sorted({record.status for record in self._records}))
         self._apply_filters()
 
     def export_selected_log(self) -> Path | None:
@@ -190,8 +191,8 @@ class LogPage(QWidget):
         self.status_label.setText(f"显示 {len(self._filtered_records)} / {len(self._records)} 条日志")
         if self._filtered_records:
             self.log_list.setCurrentRow(0)
-            return
-        self.detail_view.clear()
+        else:
+            self.detail_view.clear()
 
     def _selected_record(self) -> _LogRecord | None:
         row = self.log_list.currentRow()

@@ -1,6 +1,6 @@
 [project]
 name = "codexsubmcp"
-version = "0.2.3"
+version = "0.3.0"
 description = "Windows watchdog for leaked Codex subagent MCP process suites"
 readme = "README.md"
 requires-python = ">=3.11"

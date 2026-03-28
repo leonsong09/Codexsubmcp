@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -44,3 +45,8 @@ class McpRecord:
     version: str | None = None
     confidence: str = "medium"
     notes: str | None = None
+    type: str | None = None
+    args: tuple[str, ...] = ()
+    env_keys: tuple[str, ...] = ()
+    startup_timeout_ms: int | None = None
+    tool_timeout_sec: float | None = None
