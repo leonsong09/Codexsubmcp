@@ -47,21 +47,18 @@ def _analysis() -> AnalysisResult:
             drift_unconfigured_runtime_count=1,
             live_suite_count=1,
             orphan_suite_count=0,
-            stale_attached_branch_count=1,
         ),
         running_mcps=(
             RunningMcpSummary(
                 tool_signature="agentation-mcp",
                 instance_count=2,
                 live_codex_pid_count=1,
-                has_stale=True,
             ),
         ),
         configured_not_running=(),
         running_not_configured=("agentation-mcp",),
         live_suites=(),
         orphan_suites=(),
-        stale_attached_branches=(),
     )
 
 

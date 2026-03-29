@@ -9,6 +9,7 @@ from typing import Any
 from codexsubmcp.app_paths import build_runtime_paths
 from codexsubmcp.core.analysis import AnalysisResult
 from codexsubmcp.core.cleanup_workflow import CleanupPreview, CleanupResult
+from codexsubmcp.core.recognition import RecognitionReport
 from codexsubmcp.core.system_snapshot import SystemSnapshot
 
 
@@ -18,13 +19,18 @@ class LifetimeStats:
     total_preview_count: int = 0
     total_cleanup_count: int = 0
     total_closed_suite_count: int = 0
-    total_closed_stale_branch_count: int = 0
     total_killed_mcp_instance_count: int = 0
     total_killed_process_count: int = 0
     last_cleanup_at: datetime | None = None
 
 
-def write_refresh_log(*, snapshot: SystemSnapshot, analysis: AnalysisResult, log_dir: Path | None = None) -> Path:
+def write_refresh_log(
+    *,
+    snapshot: SystemSnapshot,
+    analysis: AnalysisResult,
+    recognition: RecognitionReport,
+    log_dir: Path | None = None,
+) -> Path:
     return _write_log(
         kind="refresh",
         happened_at=analysis.analyzed_at,
@@ -38,8 +44,8 @@ def write_refresh_log(*, snapshot: SystemSnapshot, analysis: AnalysisResult, log
                 "running_mcp_instance_count": analysis.summary.running_mcp_instance_count,
                 "live_suite_count": analysis.summary.live_suite_count,
                 "orphan_suite_count": analysis.summary.orphan_suite_count,
-                "stale_attached_branch_count": analysis.summary.stale_attached_branch_count,
             },
+            "recognition": recognition,
         },
         log_dir=log_dir,
     )
@@ -129,8 +135,6 @@ def _update_cleanup_stats(stats: LifetimeStats, payload: dict[str, Any]) -> Life
         total_preview_count=stats.total_preview_count,
         total_cleanup_count=stats.total_cleanup_count + 1,
         total_closed_suite_count=stats.total_closed_suite_count + int(summary.get("closed_suite_count") or 0),
-        total_closed_stale_branch_count=stats.total_closed_stale_branch_count
-        + int(summary.get("closed_stale_branch_count") or 0),
         total_killed_mcp_instance_count=stats.total_killed_mcp_instance_count
         + int(summary.get("killed_mcp_instance_count") or 0),
         total_killed_process_count=stats.total_killed_process_count + int(summary.get("killed_process_count") or 0),

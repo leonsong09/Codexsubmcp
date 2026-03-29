@@ -2,16 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable
-
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from codexsubmcp.core.analysis import AnalysisResult
 
 
 ORPHAN_SUITE = "orphan_suite"
-STALE_ATTACHED_BRANCH = "stale_attached_branch"
 
 
 @dataclass(frozen=True)
@@ -24,16 +21,11 @@ class CleanupTarget:
     reason: str
     risk_hint: str
     suite_id: str | None = None
-    tool_signature: str | None = None
-    live_codex_pid: int | None = None
-    latest_kept_launcher_pid: int | None = None
 
 
 @dataclass(frozen=True)
 class CleanupPreviewSummary:
     target_count: int
-    orphan_suite_target_count: int
-    stale_branch_target_count: int
 
 
 @dataclass(frozen=True)
@@ -60,7 +52,6 @@ class CleanupResultSummary:
     target_count: int
     failed_target_count: int
     closed_suite_count: int
-    closed_stale_branch_count: int
     killed_mcp_instance_count: int
     killed_process_count: int
 
@@ -76,17 +67,16 @@ class CleanupResult:
 def build_cleanup_preview(analysis: AnalysisResult | None) -> CleanupPreview:
     if analysis is None:
         raise ValueError("analysis result is required before building cleanup preview")
-    targets = tuple(sorted(_build_targets(analysis), key=lambda item: (item.created_at, item.target_id)))
-    orphan_count = sum(1 for target in targets if target.target_type == ORPHAN_SUITE)
-    stale_count = sum(1 for target in targets if target.target_type == STALE_ATTACHED_BRANCH)
+    targets = tuple(
+        sorted(
+            [_orphan_target(suite) for suite in analysis.orphan_suites],
+            key=lambda item: (item.created_at, item.target_id),
+        )
+    )
     return CleanupPreview(
         snapshot_id=analysis.snapshot_id,
         previewed_at=datetime.now(),
-        summary=CleanupPreviewSummary(
-            target_count=len(targets),
-            orphan_suite_target_count=orphan_count,
-            stale_branch_target_count=stale_count,
-        ),
+        summary=CleanupPreviewSummary(target_count=len(targets)),
         targets=targets,
     )
 
@@ -99,7 +89,6 @@ def execute_cleanup_preview(
     results = tuple(_execute_target(target, kill_runner=kill_runner) for target in preview.targets)
     failed_count = sum(1 for item in results if item.status == "failed")
     closed_suite_count = _count_successes(results, ORPHAN_SUITE)
-    closed_stale_count = _count_successes(results, STALE_ATTACHED_BRANCH)
     killed_process_count = sum(len(item.killed_process_ids) for item in results)
     return CleanupResult(
         snapshot_id=preview.snapshot_id,
@@ -109,19 +98,11 @@ def execute_cleanup_preview(
             target_count=len(preview.targets),
             failed_target_count=failed_count,
             closed_suite_count=closed_suite_count,
-            closed_stale_branch_count=closed_stale_count,
-            killed_mcp_instance_count=closed_suite_count + closed_stale_count,
+            killed_mcp_instance_count=closed_suite_count,
             killed_process_count=killed_process_count,
         ),
         target_results=results,
     )
-
-
-def _build_targets(analysis: AnalysisResult) -> list[CleanupTarget]:
-    return [
-        *[_orphan_target(suite) for suite in analysis.orphan_suites],
-        *[_stale_target(branch) for branch in analysis.stale_attached_branches],
-    ]
 
 
 def _orphan_target(suite) -> CleanupTarget:
@@ -137,22 +118,11 @@ def _orphan_target(suite) -> CleanupTarget:
     )
 
 
-def _stale_target(branch) -> CleanupTarget:
-    return CleanupTarget(
-        target_id=f"stale-{branch.live_codex_pid}-{branch.tool_signature}-{branch.launcher_pid}",
-        target_type=STALE_ATTACHED_BRANCH,
-        created_at=branch.created_at,
-        kill_pid=branch.launcher_pid,
-        process_ids=tuple(branch.process_ids),
-        tool_signature=branch.tool_signature,
-        live_codex_pid=branch.live_codex_pid,
-        latest_kept_launcher_pid=branch.latest_kept_launcher_pid,
-        reason=f"同一 Codex 会话下 {branch.tool_signature} 存在更新分支，当前分支已 stale。",
-        risk_hint=f"仅清理旧分支，保留最新 launcher {branch.latest_kept_launcher_pid}。",
-    )
-
-
-def _execute_target(target: CleanupTarget, *, kill_runner: Callable[[int], None]) -> CleanupTargetResult:
+def _execute_target(
+    target: CleanupTarget,
+    *,
+    kill_runner: Callable[[int], None],
+) -> CleanupTargetResult:
     try:
         kill_runner(target.kill_pid)
     except Exception as exc:  # noqa: BLE001

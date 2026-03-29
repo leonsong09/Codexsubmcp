@@ -12,6 +12,7 @@ from codexsubmcp.core.analysis import analyze_snapshot
 from codexsubmcp.core.cleanup import build_cleanup_preview, execute_cleanup_preview
 from codexsubmcp.core.config import DEFAULT_CONFIG, load_config
 from codexsubmcp.core.mcp_inventory import build_inventory
+from codexsubmcp.core.recognition import validate_parent_recognition
 from codexsubmcp.core.runtime_logs import (
     write_cleanup_log,
     write_preview_log,
@@ -59,11 +60,12 @@ def _payload_from_log(log_path: Path) -> dict[str, object]:
     return payload
 
 
-def _build_snapshot_and_analysis(config_path: Path | None) -> tuple[object, object]:
+def _build_snapshot_and_analysis(config_path: Path | None) -> tuple[dict[str, object], object, object, object]:
     config = load_config(runtime_path=_resolve_config_path(config_path))
     snapshot = build_system_snapshot()
     analysis = analyze_snapshot(snapshot, config=config)
-    return snapshot, analysis
+    recognition = validate_parent_recognition(snapshot, analysis, config)
+    return config, snapshot, analysis, recognition
 
 
 def _emit_headless_payload(payload: dict[str, object], report_file: Path | None) -> int:
@@ -77,8 +79,8 @@ def _cmd_gui(_args: argparse.Namespace) -> int:
 
 
 def _cmd_refresh(args: argparse.Namespace) -> int:
-    snapshot, analysis = _build_snapshot_and_analysis(args.config)
-    log_path = write_refresh_log(snapshot=snapshot, analysis=analysis)
+    _config, snapshot, analysis, recognition = _build_snapshot_and_analysis(args.config)
+    log_path = write_refresh_log(snapshot=snapshot, analysis=analysis, recognition=recognition)
     payload = _payload_from_log(log_path)
     if args.headless:
         return _emit_headless_payload(payload, args.report_file)
@@ -87,7 +89,9 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
 
 
 def _cmd_preview(args: argparse.Namespace) -> int:
-    _snapshot, analysis = _build_snapshot_and_analysis(args.config)
+    _config, _snapshot, analysis, recognition = _build_snapshot_and_analysis(args.config)
+    if not recognition.trusted:
+        raise RuntimeError(recognition.reason)
     preview = build_cleanup_preview(analysis)
     log_path = write_preview_log(preview=preview)
     payload = _payload_from_log(log_path)
@@ -100,9 +104,14 @@ def _cmd_preview(args: argparse.Namespace) -> int:
 def _cmd_cleanup(args: argparse.Namespace) -> int:
     if not args.yes:
         return _cmd_preview(args)
-    _snapshot, analysis = _build_snapshot_and_analysis(args.config)
+    _config, _snapshot, analysis, recognition = _build_snapshot_and_analysis(args.config)
+    if not recognition.trusted:
+        raise RuntimeError(recognition.reason)
     preview = build_cleanup_preview(analysis)
-    result = execute_cleanup_preview(preview, kill_runner=_run_taskkill)
+    result = execute_cleanup_preview(
+        preview,
+        kill_runner=_run_taskkill,
+    )
     log_path = write_cleanup_log(result=result)
     payload = _payload_from_log(log_path)
     if args.headless:
@@ -125,7 +134,7 @@ def _cmd_scan(_args: argparse.Namespace) -> int:
 
 
 def _cmd_scan_mcp(args: argparse.Namespace) -> int:
-    snapshot, analysis = _build_snapshot_and_analysis(getattr(args, "config", None))
+    _config, snapshot, analysis, _recognition = _build_snapshot_and_analysis(getattr(args, "config", None))
     payload = build_inventory(
         configured=list(snapshot.configured_mcps),
         running=list(analysis.running_mcps),

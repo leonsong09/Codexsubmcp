@@ -7,6 +7,7 @@ from pathlib import Path
 from codexsubmcp.core.analysis import analyze_snapshot
 from codexsubmcp.core.cleanup import build_cleanup_preview, execute_cleanup_preview
 from codexsubmcp.core.models import McpRecord, ProcessInfo
+from codexsubmcp.core.recognition import validate_parent_recognition
 from codexsubmcp.core.runtime_logs import (
     load_lifetime_stats,
     write_cleanup_log,
@@ -62,15 +63,24 @@ def _snapshot_bundle():
         ),
     )
     analysis = analyze_snapshot(snapshot)
+    recognition = validate_parent_recognition(snapshot, analysis, {"codex_patterns": ["codex.exe"]})
     preview = build_cleanup_preview(analysis)
-    cleanup_result = execute_cleanup_preview(preview, kill_runner=lambda _pid: None)
-    return snapshot, analysis, preview, cleanup_result
+    cleanup_result = execute_cleanup_preview(
+        preview,
+        kill_runner=lambda _pid: None,
+    )
+    return snapshot, analysis, recognition, preview, cleanup_result
 
 
 def test_runtime_log_writers_create_refresh_preview_and_cleanup_files(tmp_path):
-    snapshot, analysis, preview, cleanup_result = _snapshot_bundle()
+    snapshot, analysis, recognition, preview, cleanup_result = _snapshot_bundle()
 
-    refresh_path = write_refresh_log(snapshot=snapshot, analysis=analysis, log_dir=tmp_path)
+    refresh_path = write_refresh_log(
+        snapshot=snapshot,
+        analysis=analysis,
+        recognition=recognition,
+        log_dir=tmp_path,
+    )
     preview_path = write_preview_log(preview=preview, log_dir=tmp_path)
     cleanup_path = write_cleanup_log(result=cleanup_result, log_dir=tmp_path)
 
@@ -83,7 +93,7 @@ def test_runtime_log_writers_create_refresh_preview_and_cleanup_files(tmp_path):
 
 
 def test_lifetime_stats_only_count_successful_cleanup_logs(tmp_path):
-    _snapshot, _analysis, _preview, cleanup_result = _snapshot_bundle()
+    _snapshot, _analysis, _recognition, _preview, cleanup_result = _snapshot_bundle()
     failed_result = replace(
         cleanup_result,
         executed_at=datetime.fromisoformat("2026-03-28T12:05:00"),
@@ -92,7 +102,6 @@ def test_lifetime_stats_only_count_successful_cleanup_logs(tmp_path):
             success=False,
             failed_target_count=1,
             closed_suite_count=0,
-            closed_stale_branch_count=0,
             killed_mcp_instance_count=0,
             killed_process_count=0,
         ),
@@ -105,13 +114,12 @@ def test_lifetime_stats_only_count_successful_cleanup_logs(tmp_path):
 
     assert stats.total_cleanup_count == 1
     assert stats.total_closed_suite_count == 1
-    assert stats.total_closed_stale_branch_count == 1
 
 
 def test_refresh_and_preview_logs_do_not_pollute_cleanup_totals(tmp_path):
-    snapshot, analysis, preview, cleanup_result = _snapshot_bundle()
+    snapshot, analysis, recognition, preview, cleanup_result = _snapshot_bundle()
 
-    write_refresh_log(snapshot=snapshot, analysis=analysis, log_dir=tmp_path)
+    write_refresh_log(snapshot=snapshot, analysis=analysis, recognition=recognition, log_dir=tmp_path)
     write_preview_log(preview=preview, log_dir=tmp_path)
     write_cleanup_log(result=cleanup_result, log_dir=tmp_path)
     stats = load_lifetime_stats(log_dir=tmp_path)
@@ -119,13 +127,12 @@ def test_refresh_and_preview_logs_do_not_pollute_cleanup_totals(tmp_path):
     assert stats.total_refresh_count == 1
     assert stats.total_preview_count == 1
     assert stats.total_closed_suite_count == 1
-    assert stats.total_closed_stale_branch_count == 1
-    assert stats.total_killed_mcp_instance_count == 2
-    assert stats.total_killed_process_count == 4
+    assert stats.total_killed_mcp_instance_count == 1
+    assert stats.total_killed_process_count == 2
 
 
 def test_lifetime_stats_use_latest_successful_cleanup_timestamp(tmp_path):
-    _snapshot, _analysis, _preview, cleanup_result = _snapshot_bundle()
+    _snapshot, _analysis, _recognition, _preview, cleanup_result = _snapshot_bundle()
     older = replace(cleanup_result, executed_at=datetime.fromisoformat("2026-03-28T12:03:00"))
     failed = replace(
         cleanup_result,

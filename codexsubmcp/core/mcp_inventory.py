@@ -27,7 +27,6 @@ def running_to_dict(record: RunningMcpSummary) -> dict[str, object]:
         "tool_signature": record.tool_signature,
         "instance_count": record.instance_count,
         "live_codex_pid_count": record.live_codex_pid_count,
-        "has_stale": record.has_stale,
     }
 
 

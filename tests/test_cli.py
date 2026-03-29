@@ -17,6 +17,7 @@ from codexsubmcp.core.cleanup_workflow import (
 )
 from codexsubmcp.core.config import DEFAULT_CONFIG
 from codexsubmcp.core.models import McpRecord, ProcessInfo
+from codexsubmcp.core.recognition import RecognitionReport
 from codexsubmcp.core.system_snapshot import CodexRuntimeSnapshot, SystemSnapshot
 from codexsubmcp.platform.windows.tasks import TaskStatus
 
@@ -66,14 +67,12 @@ def _analysis() -> AnalysisResult:
             drift_unconfigured_runtime_count=1,
             live_suite_count=1,
             orphan_suite_count=1,
-            stale_attached_branch_count=1,
         ),
         running_mcps=(),
         configured_not_running=(),
         running_not_configured=("agentation-mcp",),
         live_suites=(),
         orphan_suites=(),
-        stale_attached_branches=(),
     )
 
 
@@ -81,11 +80,7 @@ def _preview() -> CleanupPreview:
     return CleanupPreview(
         snapshot_id="snapshot-cli",
         previewed_at=datetime.fromisoformat("2026-03-28T12:02:00"),
-        summary=CleanupPreviewSummary(
-            target_count=2,
-            orphan_suite_target_count=1,
-            stale_branch_target_count=1,
-        ),
+        summary=CleanupPreviewSummary(target_count=1),
         targets=(),
     )
 
@@ -96,14 +91,24 @@ def _cleanup_result() -> CleanupResult:
         executed_at=datetime.fromisoformat("2026-03-28T12:03:00"),
         summary=CleanupResultSummary(
             success=True,
-            target_count=2,
+            target_count=1,
             failed_target_count=0,
             closed_suite_count=1,
-            closed_stale_branch_count=1,
-            killed_mcp_instance_count=2,
-            killed_process_count=4,
+            killed_mcp_instance_count=1,
+            killed_process_count=2,
         ),
         target_results=(),
+    )
+
+
+def _recognition(status: str = "trusted", reason: str = "ok") -> RecognitionReport:
+    return RecognitionReport(
+        status=status,
+        reason=reason,
+        live_sample_count=1,
+        matched_codex_process_count=2,
+        verified_live_parent_count=1,
+        unmatched_live_parent_count=0 if status == "trusted" else 1,
     )
 
 
@@ -145,6 +150,7 @@ def test_main_refresh_headless_outputs_new_summary_fields(monkeypatch, tmp_path,
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setattr("codexsubmcp.cli.build_system_snapshot", lambda **_kwargs: _snapshot())
     monkeypatch.setattr("codexsubmcp.cli.analyze_snapshot", lambda *_args, **_kwargs: _analysis())
+    monkeypatch.setattr("codexsubmcp.cli.validate_parent_recognition", lambda *_args, **_kwargs: _recognition())
 
     exit_code = main(["refresh", "--headless"])
     payload = json.loads(capsys.readouterr().out)
@@ -153,12 +159,14 @@ def test_main_refresh_headless_outputs_new_summary_fields(monkeypatch, tmp_path,
     assert payload["kind"] == "refresh"
     assert payload["summary"]["configured_mcp_count"] == 1
     assert payload["summary"]["running_mcp_instance_count"] == 2
+    assert payload["recognition"]["status"] == "trusted"
 
 
 def test_main_preview_headless_outputs_new_summary_fields(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setattr("codexsubmcp.cli.build_system_snapshot", lambda **_kwargs: _snapshot())
     monkeypatch.setattr("codexsubmcp.cli.analyze_snapshot", lambda *_args, **_kwargs: _analysis())
+    monkeypatch.setattr("codexsubmcp.cli.validate_parent_recognition", lambda *_args, **_kwargs: _recognition())
     monkeypatch.setattr("codexsubmcp.cli.build_cleanup_preview", lambda *_args, **_kwargs: _preview())
 
     exit_code = main(["preview", "--headless"])
@@ -166,8 +174,7 @@ def test_main_preview_headless_outputs_new_summary_fields(monkeypatch, tmp_path,
 
     assert exit_code == 0
     assert payload["kind"] == "preview"
-    assert payload["summary"]["target_count"] == 2
-    assert payload["summary"]["stale_branch_target_count"] == 1
+    assert payload["summary"]["target_count"] == 1
 
 
 def test_main_cleanup_headless_writes_report_file(monkeypatch, tmp_path, capsys):
@@ -178,6 +185,7 @@ def test_main_cleanup_headless_writes_report_file(monkeypatch, tmp_path, capsys)
 
     monkeypatch.setattr("codexsubmcp.cli.build_system_snapshot", lambda **_kwargs: _snapshot())
     monkeypatch.setattr("codexsubmcp.cli.analyze_snapshot", lambda *_args, **_kwargs: _analysis())
+    monkeypatch.setattr("codexsubmcp.cli.validate_parent_recognition", lambda *_args, **_kwargs: _recognition())
     monkeypatch.setattr("codexsubmcp.cli.build_cleanup_preview", lambda *_args, **_kwargs: _preview())
     monkeypatch.setattr("codexsubmcp.cli.execute_cleanup_preview", lambda *_args, **_kwargs: _cleanup_result())
 
@@ -201,6 +209,60 @@ def test_main_cleanup_headless_writes_report_file(monkeypatch, tmp_path, capsys)
     assert payload["summary"]["success"] is True
     assert payload["summary"]["closed_suite_count"] == 1
     assert Path(payload["log_path"]).exists()
+
+
+def test_run_once_executes_orphan_cleanup_when_recognition_is_trusted(monkeypatch, tmp_path, capsys):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(DEFAULT_CONFIG), encoding="utf-8")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("codexsubmcp.cli.build_system_snapshot", lambda **_kwargs: _snapshot())
+    monkeypatch.setattr("codexsubmcp.cli.analyze_snapshot", lambda *_args, **_kwargs: _analysis())
+    monkeypatch.setattr("codexsubmcp.cli.validate_parent_recognition", lambda *_args, **_kwargs: _recognition())
+    monkeypatch.setattr("codexsubmcp.cli.build_cleanup_preview", lambda *_args, **_kwargs: _preview())
+
+    seen: dict[str, object] = {}
+
+    def fake_execute(preview, *, kill_runner):
+        seen["preview"] = preview
+        return CleanupResult(
+            snapshot_id="snapshot-cli",
+            executed_at=datetime.fromisoformat("2026-03-28T12:03:00"),
+            summary=CleanupResultSummary(
+                success=True,
+                target_count=1,
+                failed_target_count=0,
+                closed_suite_count=1,
+                killed_mcp_instance_count=1,
+                killed_process_count=2,
+            ),
+            target_results=(),
+        )
+
+    monkeypatch.setattr("codexsubmcp.cli.execute_cleanup_preview", fake_execute)
+
+    exit_code = main(["run-once", "--headless", "--config", str(config_path)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert seen["preview"] == _preview()
+    assert payload["summary"]["closed_suite_count"] == 1
+
+
+def test_main_preview_blocks_when_recognition_is_not_trusted(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("codexsubmcp.cli.build_system_snapshot", lambda **_kwargs: _snapshot())
+    monkeypatch.setattr("codexsubmcp.cli.analyze_snapshot", lambda *_args, **_kwargs: _analysis())
+    monkeypatch.setattr(
+        "codexsubmcp.cli.validate_parent_recognition",
+        lambda *_args, **_kwargs: _recognition(status="blocked", reason="blocked"),
+    )
+
+    try:
+        main(["preview", "--headless"])
+    except RuntimeError as exc:
+        assert str(exc) == "blocked"
+    else:
+        raise AssertionError("preview should block when recognition is not trusted")
 
 
 def test_main_config_validate_returns_zero_for_valid_config(tmp_path):

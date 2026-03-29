@@ -51,17 +51,19 @@ def _summary_text(action: str, payload: dict[str, object]) -> str:
     if not isinstance(summary, dict):
         return payload.get("snapshot_id") or payload.get("previewed_at") or payload.get("executed_at") or "-"
     if action == "refresh":
+        recognition = payload.get("recognition") or {}
+        status = recognition.get("status") or "-"
         return (
+            f"识别 {status} / "
             f"子代理 {summary.get('open_subagent_count', 0)} / "
             f"suite {summary.get('live_suite_count', 0)} / "
             f"MCP {summary.get('running_mcp_instance_count', 0)}"
         )
     if action == "preview":
-        return f"目标 {summary.get('target_count', 0)} / stale {summary.get('stale_branch_target_count', 0)}"
+        return f"orphan 目标 {summary.get('target_count', 0)}"
     if action == "cleanup":
         return (
             f"+suite {summary.get('closed_suite_count', 0)} / "
-            f"+stale {summary.get('closed_stale_branch_count', 0)} / "
             f"+MCP {summary.get('killed_mcp_instance_count', 0)} / "
             f"+process {summary.get('killed_process_count', 0)}"
         )

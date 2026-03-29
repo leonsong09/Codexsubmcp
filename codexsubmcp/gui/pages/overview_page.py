@@ -37,10 +37,12 @@ class OverviewPage(QWidget):
         self.cleanup_summary_label = QLabel("请先刷新以载入当前状态。")
         self.mcp_summary_label = QLabel("")
         self.state_summary_label = QLabel("当前态：尚未刷新")
+        self.recognition_label = QLabel("识别校验：尚未执行")
         self.latest_result_label = QLabel("最近清理：尚无结果")
         self.lifetime_stats_label = QLabel("累计统计：尚无数据")
         self.refresh_status_label = QLabel("最近刷新：尚未刷新")
         self._runtime_summary: dict[str, object] = {}
+        self._recognition: dict[str, object] = {}
         self._cleanable_target_count = 0
 
         self.refresh_button.clicked.connect(lambda: task_runner.dispatch("refresh", headless=False))
@@ -59,6 +61,7 @@ class OverviewPage(QWidget):
         layout.addWidget(self.task_summary_label)
         layout.addWidget(self.config_summary_label)
         layout.addWidget(self.refresh_status_label)
+        layout.addWidget(self.recognition_label)
         layout.addWidget(self.state_summary_label)
         layout.addWidget(self.cleanup_summary_label)
         layout.addWidget(self.latest_result_label)
@@ -71,7 +74,7 @@ class OverviewPage(QWidget):
         self.set_task_status(task_status)
         self.set_config_summary(config)
         self.set_inventory_summary(inventory)
-        self.set_workflow_enabled(False)
+        self.set_workflow_enabled(preview_enabled=False, cleanup_enabled=False)
 
     def set_task_status(self, task_status: TaskStatus) -> None:
         self.task_summary_label.setText(f"计划任务：{_task_text(task_status)}")
@@ -108,15 +111,18 @@ class OverviewPage(QWidget):
         installed = len(inventory.get("installed_candidates", []))
         self.mcp_summary_label.setText(f"MCP 摘要：已配置 {configured} 项 | 候选 {installed} 项")
 
-    def set_workflow_enabled(self, enabled: bool) -> None:
-        self.preview_button.setEnabled(enabled)
-        self.cleanup_button.setEnabled(enabled)
+    def set_workflow_enabled(self, *, preview_enabled: bool, cleanup_enabled: bool) -> None:
+        self.preview_button.setEnabled(preview_enabled)
+        self.cleanup_button.setEnabled(cleanup_enabled)
 
     def set_refresh_summary(self, payload: dict[str, object]) -> None:
         self._runtime_summary = dict(payload.get("summary") or {})
+        recognition = payload.get("recognition") or {}
+        self._recognition = dict(recognition) if isinstance(recognition, dict) else {}
         self.refresh_status_label.setText(
             f"最近刷新：snapshot={payload.get('snapshot_id') or '-'} | captured_at={payload.get('captured_at') or '-'}"
         )
+        self._render_recognition_summary()
         self._render_state_summary()
 
     def set_preview_summary(self, payload: dict[str, object]) -> None:
@@ -132,7 +138,6 @@ class OverviewPage(QWidget):
         state = "成功" if summary.get("success") else "失败"
         self.latest_result_label.setText(
             f"最近清理{state}：+suite {summary.get('closed_suite_count', 0)} | "
-            f"+stale {summary.get('closed_stale_branch_count', 0)} | "
             f"+process {summary.get('killed_process_count', 0)}"
         )
 
@@ -140,11 +145,16 @@ class OverviewPage(QWidget):
         self.lifetime_stats_label.setText(
             f"累计 cleanup {stats.get('total_cleanup_count', 0)} | "
             f"suite {stats.get('total_closed_suite_count', 0)} | "
-            f"stale {stats.get('total_closed_stale_branch_count', 0)} | "
             f"MCP {stats.get('total_killed_mcp_instance_count', 0)} | "
             f"process {stats.get('total_killed_process_count', 0)} | "
             f"last={stats.get('last_cleanup_at') or '-'}"
         )
+
+    def _render_recognition_summary(self) -> None:
+        status = str(self._recognition.get("status") or "unknown")
+        reason = str(self._recognition.get("reason") or "尚未执行校验。")
+        status_text = "已通过" if status == "trusted" else "未通过"
+        self.recognition_label.setText(f"识别校验：{status_text} | {reason}")
 
     def _render_state_summary(self) -> None:
         self.state_summary_label.setText(

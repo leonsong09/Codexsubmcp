@@ -107,23 +107,6 @@ def test_analyze_snapshot_reports_unconfigured_runtime_signatures():
     assert result.summary.drift_unconfigured_runtime_count == 1
     assert result.running_not_configured == ("agentation-mcp",)
 
-
-def test_analyze_snapshot_aggregates_stale_attached_branches():
-    result = analyze_snapshot(
-        _snapshot(
-            [
-                _configured_record("agentation", "-y", "agentation-mcp", "server"),
-                _configured_record("memory", "-y", "@modelcontextprotocol/server-memory"),
-            ]
-        )
-    )
-
-    assert len(result.stale_attached_branches) == 1
-    assert result.stale_attached_branches[0].tool_signature == "agentation-mcp"
-    assert result.stale_attached_branches[0].live_codex_pid == 100
-    assert result.stale_attached_branches[0].latest_kept_launcher_pid == 120
-
-
 def test_analyze_snapshot_groups_running_mcps_by_signature():
     result = analyze_snapshot(
         _snapshot(
@@ -138,6 +121,5 @@ def test_analyze_snapshot_groups_running_mcps_by_signature():
 
     assert by_signature["agentation-mcp"].instance_count == 2
     assert by_signature["agentation-mcp"].live_codex_pid_count == 1
-    assert by_signature["agentation-mcp"].has_stale is True
     assert by_signature["server-memory"].instance_count == 1
     assert by_signature["server-memory"].live_codex_pid_count == 0

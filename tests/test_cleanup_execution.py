@@ -71,40 +71,29 @@ def test_execute_cleanup_preview_kills_orphan_suite_root_and_records_action():
     assert result.target_results[0].status == "killed"
     assert result.target_results[0].killed_process_ids == (210, 211)
 
-
-def test_execute_cleanup_preview_kills_stale_branch_root_and_records_pids():
-    preview = _preview()
-    stale_target = next(target for target in preview.targets if target.target_type == "stale_attached_branch")
-    preview = replace(preview, targets=(stale_target,))
-    seen: list[int] = []
-
-    result = execute_cleanup_preview(preview, kill_runner=lambda pid: seen.append(pid))
-
-    assert seen == [110]
-    assert result.target_results[0].target_type == "stale_attached_branch"
-    assert result.target_results[0].killed_process_ids == (110, 111)
-
-
 def test_execute_cleanup_preview_summarizes_closed_targets_and_processes():
     seen: list[int] = []
 
-    result = execute_cleanup_preview(_preview(), kill_runner=lambda pid: seen.append(pid))
+    result = execute_cleanup_preview(
+        _preview(),
+        kill_runner=lambda pid: seen.append(pid),
+    )
 
-    assert seen == [110, 210]
+    assert seen == [210]
     assert result.summary.closed_suite_count == 1
-    assert result.summary.closed_stale_branch_count == 1
-    assert result.summary.killed_mcp_instance_count == 2
-    assert result.summary.killed_process_count == 4
+    assert result.summary.killed_mcp_instance_count == 1
+    assert result.summary.killed_process_count == 2
 
 
 def test_execute_cleanup_preview_keeps_other_successes_when_one_target_fails():
     def fake_kill(pid: int) -> None:
-        if pid == 110:
-            raise RuntimeError("taskkill failed")
+        raise RuntimeError("taskkill failed")
 
-    result = execute_cleanup_preview(_preview(), kill_runner=fake_kill)
+    result = execute_cleanup_preview(
+        _preview(),
+        kill_runner=fake_kill,
+    )
 
     assert result.summary.failed_target_count == 1
-    assert result.summary.closed_suite_count == 1
-    assert result.summary.closed_stale_branch_count == 0
-    assert [item.status for item in result.target_results] == ["failed", "killed"]
+    assert result.summary.closed_suite_count == 0
+    assert [item.status for item in result.target_results] == ["failed"]

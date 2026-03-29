@@ -97,10 +97,7 @@ class CleanupPage(QWidget):
                 self.target_table.setItem(row, column, QTableWidgetItem(value))
         summary = payload.get("summary") or {}
         if isinstance(summary, dict):
-            self.summary_label.setText(
-                f"预览完成：目标 {summary.get('target_count', 0)} 个 | "
-                f"stale {summary.get('stale_branch_target_count', 0)} 个"
-            )
+            self.summary_label.setText(f"预览完成：orphan 目标 {summary.get('target_count', 0)} 个")
         else:
             self.summary_label.setText("预览完成。")
         if self._targets:
@@ -150,8 +147,6 @@ class CleanupPage(QWidget):
             f"kill_pid={target.get('kill_pid')}",
             f"process_ids={target.get('process_ids')}",
             f"created_at={target.get('created_at')}",
-            f"tool_signature={target.get('tool_signature')}",
-            f"latest_kept_launcher_pid={target.get('latest_kept_launcher_pid')}",
             "",
             "判定原因：",
             _reason(target),

@@ -117,10 +117,12 @@ def test_overview_buttons_dispatch_refresh_preview_and_cleanup(qtbot):
         "refresh",
         {
             "summary": {"configured_mcp_count": 1, "running_mcp_instance_count": 1},
+            "recognition": {"status": "trusted", "reason": "ok"},
             "inventory": {"configured": [{"name": "memory"}], "running": [], "drift": {}},
         },
     )
     qtbot.mouseClick(window.overview_page.preview_button, Qt.LeftButton)
+    window._handle_succeeded("preview", {"summary": {"target_count": 1}, "targets": []})
     qtbot.mouseClick(window.overview_page.cleanup_button, Qt.LeftButton)
 
     assert runner.requests == [
@@ -165,6 +167,7 @@ def test_overview_page_shows_runtime_totals_latest_cleanup_and_lifetime_stats(qt
         {
             "snapshot_id": "snapshot-1",
             "captured_at": "2026-03-28T12:00:00",
+            "recognition": {"status": "trusted", "reason": "ok"},
             "summary": {
                 "open_subagent_count": 3,
                 "live_suite_count": 2,
@@ -179,7 +182,6 @@ def test_overview_page_shows_runtime_totals_latest_cleanup_and_lifetime_stats(qt
             "summary": {
                 "success": True,
                 "closed_suite_count": 1,
-                "closed_stale_branch_count": 1,
                 "killed_process_count": 4,
             }
         }
@@ -188,7 +190,6 @@ def test_overview_page_shows_runtime_totals_latest_cleanup_and_lifetime_stats(qt
         {
             "total_cleanup_count": 3,
             "total_closed_suite_count": 4,
-            "total_closed_stale_branch_count": 5,
             "total_killed_mcp_instance_count": 9,
             "total_killed_process_count": 18,
             "last_cleanup_at": "2026-03-28T12:10:00",
@@ -200,6 +201,7 @@ def test_overview_page_shows_runtime_totals_latest_cleanup_and_lifetime_stats(qt
     assert "运行中 MCP 实例 4" in window.overview_page.state_summary_label.text()
     assert "已配置 MCP 7" in window.overview_page.state_summary_label.text()
     assert "可清理目标 2" in window.overview_page.state_summary_label.text()
+    assert "已通过" in window.overview_page.recognition_label.text()
     assert "最近清理成功" in window.overview_page.latest_result_label.text()
     assert "累计 cleanup 3" in window.overview_page.lifetime_stats_label.text()
     assert "snapshot-1" in window.overview_page.refresh_status_label.text()
@@ -225,6 +227,7 @@ def test_refresh_success_updates_pages_and_enables_workflow(qtbot, monkeypatch):
         "refresh",
         {
             "summary": {"configured_mcp_count": 1, "running_mcp_instance_count": 1},
+            "recognition": {"status": "trusted", "reason": "ok"},
             "inventory": {
                 "configured": [{"name": "memory"}],
                 "running": [{"tool_signature": "memory", "instance_count": 1}],
@@ -234,11 +237,11 @@ def test_refresh_success_updates_pages_and_enables_workflow(qtbot, monkeypatch):
     )
 
     assert window.overview_page.preview_button.isEnabled()
-    assert window.overview_page.cleanup_button.isEnabled()
+    assert not window.overview_page.cleanup_button.isEnabled()
     assert window.cleanup_page.preview_button.isEnabled()
-    assert window.cleanup_page.cleanup_button.isEnabled()
+    assert not window.cleanup_page.cleanup_button.isEnabled()
     assert "已配置 1" in window.mcp_page.status_label.text()
-    assert "已刷新" in window.cleanup_page.summary_label.text()
+    assert "校验已通过" in window.cleanup_page.summary_label.text()
     assert seen == ["logs"]
 
 
@@ -471,7 +474,6 @@ def test_log_page_filters_by_action_and_status(qtbot, tmp_path):
                 "summary": {
                     "success": False,
                     "closed_suite_count": 0,
-                    "closed_stale_branch_count": 0,
                     "killed_mcp_instance_count": 0,
                     "killed_process_count": 0,
                     "failed_target_count": 1,
@@ -505,9 +507,8 @@ def test_log_page_can_export_selected_log(qtbot, tmp_path):
         "summary": {
             "success": True,
             "closed_suite_count": 1,
-            "closed_stale_branch_count": 1,
-            "killed_mcp_instance_count": 2,
-            "killed_process_count": 4,
+            "killed_mcp_instance_count": 1,
+            "killed_process_count": 2,
         },
     }
     (log_dir / "cleanup-20260326-101000.json").write_text(
@@ -554,10 +555,12 @@ def test_cleanup_page_buttons_dispatch_preview_and_cleanup(qtbot):
         "refresh",
         {
             "summary": {"configured_mcp_count": 1, "running_mcp_instance_count": 1},
+            "recognition": {"status": "trusted", "reason": "ok"},
             "inventory": {"configured": [{"name": "memory"}], "running": [], "drift": {}},
         },
     )
     qtbot.mouseClick(window.cleanup_page.preview_button, Qt.LeftButton)
+    window._handle_succeeded("preview", {"summary": {"target_count": 1}, "targets": []})
     qtbot.mouseClick(window.cleanup_page.cleanup_button, Qt.LeftButton)
 
     assert runner.requests == [
@@ -669,6 +672,7 @@ def test_main_window_uses_elevated_subprocess_for_cleanup_when_not_admin(qtbot, 
     qtbot.addWidget(window)
     seen: list[tuple[Path, list[str]]] = []
     window._latest_preview = object()
+    window._latest_recognition = {"status": "trusted", "reason": "ok"}
 
     monkeypatch.setattr("codexsubmcp.gui.main_window.is_user_admin", lambda: False)
     monkeypatch.setattr(
@@ -687,7 +691,6 @@ def test_main_window_uses_elevated_subprocess_for_cleanup_when_not_admin(qtbot, 
                     "summary": {
                         "success": True,
                         "closed_suite_count": 1,
-                        "closed_stale_branch_count": 0,
                     },
                 },
                 ensure_ascii=False,
@@ -745,7 +748,7 @@ def test_cleanup_page_can_render_preview_target_summary_and_details(qtbot):
 
     window.cleanup_page.set_preview(
         {
-            "summary": {"target_count": 2, "stale_branch_target_count": 1},
+            "summary": {"target_count": 1},
             "targets": [
                 {
                     "target_id": "orphan-1",
@@ -755,17 +758,6 @@ def test_cleanup_page_can_render_preview_target_summary_and_details(qtbot):
                     "process_ids": [210, 211],
                     "reason": "未找到仍存活的 Codex 父进程，判定为孤儿套件。",
                     "risk_hint": "该套件会被清理，请确认没有仍在使用的终端会话。",
-                },
-                {
-                    "target_id": "stale-100-agentation-110",
-                    "target_type": "stale_attached_branch",
-                    "tool_signature": "agentation-mcp",
-                    "kill_pid": 110,
-                    "created_at": "2026-03-26T10:01:00",
-                    "process_ids": [110, 111],
-                    "latest_kept_launcher_pid": 120,
-                    "reason": "旧分支会被回收",
-                    "risk_hint": "保留最新分支",
                 }
             ],
         }
@@ -776,15 +768,59 @@ def test_cleanup_page_can_render_preview_target_summary_and_details(qtbot):
         for index in range(window.cleanup_page.target_table.columnCount())
     ]
     assert headers == ["Target", "类型", "Kill PID", "进程数", "创建时间", "动作"]
-    assert window.cleanup_page.target_table.rowCount() == 2
+    assert window.cleanup_page.target_table.rowCount() == 1
     assert window.cleanup_page.target_table.item(0, 0).text() == "orphan-1"
-    assert window.cleanup_page.target_table.item(1, 1).text() == "stale_attached_branch"
-    window.cleanup_page.target_table.setCurrentCell(1, 0)
-    assert "kill_pid=110" in window.cleanup_page.detail_view.toPlainText()
-    assert "latest_kept_launcher_pid=120" in window.cleanup_page.detail_view.toPlainText()
+    window.cleanup_page.target_table.setCurrentCell(0, 0)
+    assert "kill_pid=210" in window.cleanup_page.detail_view.toPlainText()
     assert "判定原因" in window.cleanup_page.detail_view.toPlainText()
     assert "风险提示" in window.cleanup_page.detail_view.toPlainText()
     assert "预览完成" in window.cleanup_page.summary_label.text()
+
+
+def test_run_cleanup_executes_preview_without_policy(qtbot, tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(DEFAULT_CONFIG), encoding="utf-8")
+    log_path = tmp_path / "cleanup.json"
+    log_path.write_text(json.dumps({"summary": {"failed_target_count": 0}}), encoding="utf-8")
+    window = MainWindow(config=DEFAULT_CONFIG, config_path=config_path)
+    qtbot.addWidget(window)
+    window._latest_preview = {"summary": {"target_count": 1}}
+    window._latest_recognition = {"status": "trusted", "reason": "ok"}
+
+    seen: dict[str, object] = {}
+
+    def fake_execute(preview, *, kill_runner):
+        seen["preview"] = preview
+        return {"summary": {"success": True, "failed_target_count": 0}}
+
+    monkeypatch.setattr("codexsubmcp.gui.main_window.execute_cleanup_preview", fake_execute)
+    monkeypatch.setattr(
+        "codexsubmcp.gui.main_window.write_cleanup_log",
+        lambda *, result, log_dir: log_path,
+    )
+
+    window._run_cleanup()
+
+    assert seen["preview"] == {"summary": {"target_count": 1}}
+
+
+def test_cleanup_success_summary_shows_failed_target_count(qtbot, tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(DEFAULT_CONFIG), encoding="utf-8")
+    window = MainWindow(task_runner=FakeTaskRunner(), config=DEFAULT_CONFIG, config_path=config_path)
+    qtbot.addWidget(window)
+
+    window._handle_succeeded(
+        "cleanup",
+        {
+            "summary": {
+                "success": True,
+                "failed_target_count": 0,
+            }
+        },
+    )
+
+    assert "0" in window.cleanup_page.summary_label.text()
 
 
 def test_main_window_refresh_success_updates_inventory_and_cleanup_summary(qtbot, tmp_path):
@@ -797,6 +833,7 @@ def test_main_window_refresh_success_updates_inventory_and_cleanup_summary(qtbot
         "refresh",
         {
             "summary": {"configured_mcp_count": 1, "running_mcp_instance_count": 1},
+            "recognition": {"status": "trusted", "reason": "ok"},
             "inventory": {
                 "configured": [{"name": "memory"}],
                 "running": [{"tool_signature": "memory", "instance_count": 1}],
@@ -806,7 +843,7 @@ def test_main_window_refresh_success_updates_inventory_and_cleanup_summary(qtbot
     )
 
     assert "已配置 1" in window.overview_page.mcp_summary_label.text()
-    assert "已刷新" in window.cleanup_page.summary_label.text()
+    assert "校验已通过" in window.cleanup_page.summary_label.text()
 
 
 def test_task_page_renders_executable_path_and_arguments(qtbot):
@@ -853,6 +890,7 @@ def test_real_window_cleanup_runs_async_with_busy_feedback(qtbot, monkeypatch):
         "refresh",
         {
             "summary": {"configured_mcp_count": 1, "running_mcp_instance_count": 1},
+            "recognition": {"status": "trusted", "reason": "ok"},
             "inventory": {"configured": [{"name": "memory"}], "running": [], "drift": {}},
         },
     )
@@ -908,7 +946,6 @@ def test_mcp_page_renders_configured_source_env_and_timeouts(qtbot):
                     "tool_signature": "server-memory",
                     "instance_count": 1,
                     "live_codex_pid_count": 0,
-                    "has_stale": False,
                 }
             ],
             "drift": {"configured_not_running": [], "running_not_configured": []},
@@ -940,7 +977,6 @@ def test_mcp_page_shows_configured_detail_panel(qtbot):
                     "tool_signature": "server-memory",
                     "instance_count": 1,
                     "live_codex_pid_count": 0,
-                    "has_stale": False,
                 }
             ],
             "drift": {"configured_not_running": [], "running_not_configured": []},
@@ -972,7 +1008,6 @@ def test_mcp_page_shows_running_record_details(qtbot):
                     "tool_signature": "agentation-mcp",
                     "instance_count": 2,
                     "live_codex_pid_count": 1,
-                    "has_stale": True,
                 }
             ],
             "drift": {"configured_not_running": [], "running_not_configured": ["agentation-mcp"]},
@@ -986,7 +1021,6 @@ def test_mcp_page_shows_running_record_details(qtbot):
     assert "tool_signature=agentation-mcp" in running_detail
     assert "instance_count=2" in running_detail
     assert "live_codex_pid_count=1" in running_detail
-    assert "has_stale=True" in running_detail
 
 
 def test_mcp_page_can_copy_and_export_current_results(qtbot, tmp_path):
@@ -1006,7 +1040,6 @@ def test_mcp_page_can_copy_and_export_current_results(qtbot, tmp_path):
                     "tool_signature": "agentation-mcp",
                     "instance_count": 2,
                     "live_codex_pid_count": 1,
-                    "has_stale": True,
                 }
             ],
             "drift": {"configured_not_running": [], "running_not_configured": ["agentation-mcp"]},
@@ -1026,3 +1059,4 @@ def test_mcp_page_can_copy_and_export_current_results(qtbot, tmp_path):
     assert payload["configured"][0]["name"] == "memory"
     assert payload["running"][0]["tool_signature"] == "agentation-mcp"
     assert "已导出" in window.mcp_page.status_label.text()
+

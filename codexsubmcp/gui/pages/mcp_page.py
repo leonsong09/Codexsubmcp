@@ -18,10 +18,7 @@ from PySide6.QtWidgets import (
 
 def _build_list_label(record: dict[str, object]) -> str:
     if "tool_signature" in record:
-        return (
-            f"{record.get('tool_signature')} | instances={record.get('instance_count')} | "
-            f"live_codex={record.get('live_codex_pid_count')} | stale={record.get('has_stale')}"
-        )
+        return f"{record.get('tool_signature')} | instances={record.get('instance_count')} | live_codex={record.get('live_codex_pid_count')}"
     summary = " | ".join(
         part
         for part in [
@@ -157,7 +154,6 @@ class McpPage(QWidget):
                 f"tool_signature={record.get('tool_signature')}",
                 f"instance_count={record.get('instance_count')}",
                 f"live_codex_pid_count={record.get('live_codex_pid_count')}",
-                f"has_stale={record.get('has_stale')}",
             ]
         else:
             lines = [

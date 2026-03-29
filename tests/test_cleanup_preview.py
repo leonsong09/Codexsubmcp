@@ -62,28 +62,21 @@ def _analysis_result():
 def test_build_cleanup_preview_unifies_orphan_and_stale_targets():
     preview = build_cleanup_preview(_analysis_result())
 
-    assert [target.target_type for target in preview.targets] == ["stale_attached_branch", "orphan_suite"]
-    assert preview.targets[0].tool_signature == "agentation-mcp"
-    assert preview.targets[1].suite_id == "orphan-1"
+    assert [target.target_type for target in preview.targets] == ["orphan_suite"]
+    assert preview.targets[0].suite_id == "orphan-1"
 
 
 def test_build_cleanup_preview_counts_targets_by_type():
     preview = build_cleanup_preview(_analysis_result())
 
-    assert preview.summary.target_count == 2
-    assert preview.summary.orphan_suite_target_count == 1
-    assert preview.summary.stale_branch_target_count == 1
+    assert preview.summary.target_count == 1
 
 
 def test_build_cleanup_preview_targets_include_reason_risk_and_process_ids():
     preview = build_cleanup_preview(_analysis_result())
 
-    stale_target = preview.targets[0]
-    orphan_target = preview.targets[1]
+    orphan_target = preview.targets[0]
 
-    assert stale_target.reason
-    assert "最新" in stale_target.risk_hint
-    assert stale_target.process_ids == (110, 111)
     assert orphan_target.reason
     assert "Codex" in orphan_target.reason
     assert orphan_target.process_ids == (210, 211)
