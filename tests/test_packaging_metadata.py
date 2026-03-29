@@ -13,3 +13,15 @@ def test_pyproject_limits_setuptools_package_discovery(
 
     assert package_find["include"] == ["codexsubmcp*"]
     assert package_find["exclude"] == ["packaging*", "temp*"]
+
+
+def test_pyinstaller_spec_builds_windows_version_info_from_pyproject(
+    project_root: Path = Path(__file__).resolve().parents[1],
+):
+    spec = (project_root / "packaging" / "windows" / "CodexSubMcpManager.spec").read_text(encoding="utf-8")
+
+    assert "tomllib" in spec
+    assert 'PROJECT_ROOT / "pyproject.toml"' in spec
+    assert "VSVersionInfo" in spec
+    assert 'StringStruct("ProductVersion", version)' in spec
+    assert "version=VERSION_INFO" in spec
