@@ -65,27 +65,19 @@ def test_main_window_applies_shell_theme_hooks(qtbot):
 
     assert window.objectName() == "shellRoot"
     assert window.nav_list.objectName() == "navList"
-    assert window.activity_drawer.objectName() == "activityDrawer"
     assert "#shellRoot" in QApplication.instance().styleSheet()
 
 
-def test_main_window_has_top_status_bar_and_toggleable_activity_drawer(qtbot):
+def test_main_window_has_top_status_bar(qtbot):
     window = MainWindow(task_runner=FakeTaskRunner())
     qtbot.addWidget(window)
 
     assert "总览" in window.top_page_label.text()
     assert "CodexSubMcpWatchdog" in window.top_status_label.text()
     assert str(window.log_dir) in window.top_path_label.text()
-    assert window.activity_drawer.isHidden()
-
-    qtbot.mouseClick(window.activity_toggle_button, Qt.LeftButton)
-    assert not window.activity_drawer.isHidden()
-
-    qtbot.mouseClick(window.activity_toggle_button, Qt.LeftButton)
-    assert window.activity_drawer.isHidden()
 
 
-def test_main_window_activity_drawer_records_lifecycle_events(qtbot):
+def test_main_window_top_activity_reflects_lifecycle_events(qtbot):
     window = MainWindow(task_runner=FakeTaskRunner())
     qtbot.addWidget(window)
 
@@ -94,16 +86,13 @@ def test_main_window_activity_drawer_records_lifecycle_events(qtbot):
         "refresh",
         {
             "summary": {"configured_mcp_count": 1, "running_mcp_instance_count": 1},
+            "recognition": {"status": "trusted", "reason": "ok"},
             "inventory": {"configured": [{"name": "memory"}], "running": [], "drift": {}},
+            "preview": {"summary": {"target_count": 0}, "targets": []},
         },
     )
     window._handle_failed("task-install", "elevation failed")
 
-    activity_text = window.activity_log_view.toPlainText()
-    assert "START refresh" in activity_text
-    assert "SUCCESS refresh" in activity_text
-    assert "FAILED task-install" in activity_text
-    assert "elevation failed" in activity_text
     assert "失败" in window.top_activity_label.text()
 
 
@@ -714,16 +703,6 @@ def test_real_window_updates_task_status_after_refresh(qtbot):
     assert "CodexSubMcpWatchdog" in summary
 
 
-def test_mcp_page_refresh_button_dispatches_refresh(qtbot):
-    runner = FakeTaskRunner()
-    window = MainWindow(task_runner=runner)
-    qtbot.addWidget(window)
-
-    qtbot.mouseClick(window.mcp_page.refresh_button, Qt.LeftButton)
-
-    assert runner.requests == [("refresh", {})]
-
-
 def test_cleanup_success_triggers_follow_up_refresh(qtbot):
     runner = WorkflowRunner()
     window = MainWindow(task_runner=runner)
@@ -898,27 +877,6 @@ def test_real_window_cleanup_runs_async_with_busy_feedback(qtbot, monkeypatch):
 
     qtbot.waitUntil(lambda: "执行中" in window.cleanup_page.summary_label.text(), timeout=1000)
     qtbot.waitUntil(lambda: "清理完成" in window.cleanup_page.summary_label.text(), timeout=2000)
-
-
-def test_real_window_mcp_refresh_runs_async_with_status_feedback(qtbot, monkeypatch):
-    window = MainWindow()
-    qtbot.addWidget(window)
-    monkeypatch.setattr(
-        window,
-        "_run_refresh",
-        lambda: (
-            time.sleep(0.05)
-            or {
-                "summary": {"configured_mcp_count": 1, "running_mcp_instance_count": 1},
-                "inventory": {"configured": [{"name": "memory"}], "running": [], "drift": {}},
-            }
-        ),
-    )
-
-    qtbot.mouseClick(window.mcp_page.refresh_button, Qt.LeftButton)
-
-    qtbot.waitUntil(lambda: "刷新中" in window.mcp_page.status_label.text(), timeout=1000)
-    qtbot.waitUntil(lambda: "已刷新" in window.mcp_page.status_label.text(), timeout=2000)
 
 
 def test_mcp_page_renders_configured_source_env_and_timeouts(qtbot):

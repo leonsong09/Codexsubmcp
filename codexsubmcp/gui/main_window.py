@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -12,8 +11,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QMainWindow,
-    QPlainTextEdit,
-    QPushButton,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -108,16 +105,10 @@ class MainWindow(QMainWindow):
         self.top_status_label = QLabel("")
         self.top_path_label = QLabel(f"日志目录：{resolved_log_dir}")
         self.top_activity_label = QLabel("活动：就绪")
-        self.activity_toggle_button = QPushButton("显示活动抽屉")
-        self.activity_log_view = QPlainTextEdit()
-        self.activity_log_view.setReadOnly(True)
-        self.activity_drawer = QWidget()
-        self.activity_drawer.setVisible(False)
         self.top_page_label.setObjectName("pageTitle")
         self.top_status_label.setObjectName("statusPill")
         self.top_path_label.setObjectName("pathLabel")
         self.top_activity_label.setObjectName("activityPill")
-        self.activity_drawer.setObjectName("activityDrawer")
 
         self.nav_list = QListWidget()
         self.nav_list.addItems(["总览", "清理", "计划任务", "配置", "MCP 检索", "日志"])
@@ -139,7 +130,6 @@ class MainWindow(QMainWindow):
         )
         self.mcp_page = McpPage(
             inventory=resolved_inventory,
-            task_runner=self.task_runner,
             export_dir=resolved_export_dir,
         )
         self.log_page = LogPage(log_dir=resolved_log_dir, export_dir=resolved_export_dir)
@@ -173,22 +163,13 @@ class MainWindow(QMainWindow):
         top_bar.addWidget(self.top_activity_label)
         top_bar.addStretch(1)
         top_bar.addWidget(self.top_path_label)
-        top_bar.addWidget(self.activity_toggle_button)
         top_bar_widget.setLayout(top_bar)
-
-        self.activity_toggle_button.clicked.connect(self._toggle_activity_drawer)
-
-        drawer_layout = QVBoxLayout()
-        drawer_layout.addWidget(QLabel("活动抽屉"))
-        drawer_layout.addWidget(self.activity_log_view)
-        self.activity_drawer.setLayout(drawer_layout)
 
         central_layout = QVBoxLayout()
         central_layout.setContentsMargins(14, 14, 14, 14)
         central_layout.setSpacing(12)
         central_layout.addWidget(top_bar_widget)
         central_layout.addWidget(splitter, 1)
-        central_layout.addWidget(self.activity_drawer)
 
         central_widget = QWidget()
         central_widget.setLayout(central_layout)
@@ -208,7 +189,6 @@ class MainWindow(QMainWindow):
         self._set_top_task_status(self.task_status)
         self._set_workflow_enabled(cleanup_enabled=False, detail_enabled=False)
         self.overview_page.set_lifetime_stats(self._stats_payload())
-        self._append_activity("READY shell initialized")
 
     def _default_install_source(self) -> Path | None:
         if getattr(sys, "frozen", False):
@@ -316,7 +296,6 @@ class MainWindow(QMainWindow):
                 message = "未找到可安装的 GUI 可执行文件"
                 self.task_page.set_error(message)
                 self._set_top_activity(message)
-                self._append_activity(f"FAILED task-install: {message}")
                 return
             self.task_runner.run_task(
                 command,
@@ -435,7 +414,6 @@ class MainWindow(QMainWindow):
 
     def _handle_started(self, command: str) -> None:
         self._set_top_activity(f"{command} 执行中")
-        self._append_activity(f"START {command}")
         if command == "cleanup":
             self.cleanup_page.set_busy("执行中...")
         elif command.startswith("task-"):
@@ -446,7 +424,6 @@ class MainWindow(QMainWindow):
 
     def _handle_succeeded(self, command: str, result: object) -> None:
         self._set_top_activity(f"{command} 成功")
-        self._append_activity(f"SUCCESS {command}")
         if command == "refresh" and isinstance(result, dict):
             inventory = result.get("inventory") or {"configured": [], "running": [], "drift": {}}
             if isinstance(inventory, dict):
@@ -491,7 +468,6 @@ class MainWindow(QMainWindow):
 
     def _handle_failed(self, command: str, message: str) -> None:
         self._set_top_activity(f"{command} 失败")
-        self._append_activity(f"FAILED {command}: {message}")
         if command == "cleanup":
             self.cleanup_page.set_summary(message)
         elif command.startswith("task-"):
@@ -507,20 +483,11 @@ class MainWindow(QMainWindow):
             return
         self.top_page_label.setText(f"页面：{item.text()}")
 
-    def _toggle_activity_drawer(self) -> None:
-        visible = self.activity_drawer.isHidden()
-        self.activity_drawer.setVisible(visible)
-        self.activity_toggle_button.setText("隐藏活动抽屉" if visible else "显示活动抽屉")
-
     def _set_top_task_status(self, task_status: TaskStatus) -> None:
         self.top_status_label.setText(f"计划任务：{_task_shell_summary(task_status)}")
 
     def _set_top_activity(self, message: str) -> None:
         self.top_activity_label.setText(f"活动：{message}")
-
-    def _append_activity(self, message: str) -> None:
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.activity_log_view.appendPlainText(f"{timestamp} {message}")
 
     def _set_workflow_enabled(self, *, cleanup_enabled: bool, detail_enabled: bool) -> None:
         self.overview_page.set_workflow_enabled(cleanup_enabled=cleanup_enabled)

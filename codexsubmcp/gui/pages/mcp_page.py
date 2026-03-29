@@ -37,7 +37,6 @@ class McpPage(QWidget):
         self,
         *,
         inventory: dict[str, list[dict[str, object]]],
-        task_runner=None,
         export_dir: Path | None = None,
         parent: QWidget | None = None,
     ) -> None:
@@ -46,10 +45,8 @@ class McpPage(QWidget):
         self.configured_list = QListWidget()
         self.running_list = QListWidget()
         self.result_tabs = QTabWidget()
-        self.refresh_button = QPushButton("刷新 MCP")
         self.copy_button = QPushButton("复制结果")
         self.export_button = QPushButton("导出结果")
-        self.refresh_button.setProperty("accent", True)
         self.status_label = QLabel("")
         self.drift_label = QLabel("")
         self.detail_view = QPlainTextEdit()
@@ -58,8 +55,6 @@ class McpPage(QWidget):
         self._running_records: list[dict[str, object]] = []
         self._drift: dict[str, object] = {}
 
-        if task_runner is not None:
-            self.refresh_button.clicked.connect(lambda: task_runner.dispatch("refresh"))
         self.copy_button.clicked.connect(self.copy_current_results)
         self.export_button.clicked.connect(self.export_current_results)
         self.configured_list.currentRowChanged.connect(self._show_configured_detail)
@@ -80,7 +75,6 @@ class McpPage(QWidget):
 
         toolbar = QHBoxLayout()
         toolbar.setSpacing(10)
-        toolbar.addWidget(self.refresh_button)
         toolbar.addWidget(self.copy_button)
         toolbar.addWidget(self.export_button)
 
