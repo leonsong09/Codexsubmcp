@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtWidgets import QGridLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from codexsubmcp.gui.pages.cleanup_page import CleanupPage
 from codexsubmcp.platform.windows.tasks import TaskStatus
 
 
@@ -20,6 +23,7 @@ class OverviewPage(QWidget):
         task_status: TaskStatus,
         config: dict[str, object],
         inventory: dict[str, list[dict[str, object]]],
+        export_dir: Path | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -39,6 +43,7 @@ class OverviewPage(QWidget):
         self.latest_result_label = QLabel("最近清理：尚无结果")
         self.lifetime_stats_label = QLabel("累计统计：尚无数据")
         self.refresh_status_label = QLabel("最近刷新：尚未刷新")
+        self.cleanup_panel = CleanupPage(export_dir=export_dir, parent=self)
         self._runtime_summary: dict[str, object] = {}
         self._recognition: dict[str, object] = {}
         self._cleanable_target_count = 0
@@ -64,6 +69,7 @@ class OverviewPage(QWidget):
         layout.addWidget(self.lifetime_stats_label)
         layout.addWidget(self.mcp_summary_label)
         layout.addLayout(actions)
+        layout.addWidget(self.cleanup_panel)
         layout.addStretch(1)
         self.setLayout(layout)
 

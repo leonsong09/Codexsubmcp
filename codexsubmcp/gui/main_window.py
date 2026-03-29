@@ -29,7 +29,6 @@ from codexsubmcp.core.runtime_logs import (
     write_refresh_log,
 )
 from codexsubmcp.core.system_snapshot import build_system_snapshot
-from codexsubmcp.gui.pages.cleanup_page import CleanupPage
 from codexsubmcp.gui.pages.config_page import ConfigPage
 from codexsubmcp.gui.pages.log_page import LogPage
 from codexsubmcp.gui.pages.mcp_page import McpPage
@@ -111,7 +110,7 @@ class MainWindow(QMainWindow):
         self.top_activity_label.setObjectName("activityPill")
 
         self.nav_list = QListWidget()
-        self.nav_list.addItems(["总览", "清理", "计划任务", "配置", "MCP 检索", "日志"])
+        self.nav_list.addItems(["总览", "计划任务", "配置", "MCP 检索", "日志"])
         self.nav_list.setObjectName("navList")
 
         self.stack = QStackedWidget()
@@ -120,8 +119,9 @@ class MainWindow(QMainWindow):
             task_status=self.task_status,
             config=resolved_config,
             inventory=resolved_inventory,
+            export_dir=resolved_export_dir,
         )
-        self.cleanup_page = CleanupPage(self.task_runner, export_dir=resolved_export_dir)
+        self.cleanup_page = self.overview_page.cleanup_panel
         self.task_page = TaskPage(self.task_status, self.task_runner)
         self.config_page = ConfigPage(
             config=resolved_config,
@@ -136,7 +136,6 @@ class MainWindow(QMainWindow):
 
         for page in (
             self.overview_page,
-            self.cleanup_page,
             self.task_page,
             self.config_page,
             self.mcp_page,
@@ -177,7 +176,6 @@ class MainWindow(QMainWindow):
 
         for page in (
             self.overview_page,
-            self.cleanup_page,
             self.task_page,
             self.config_page,
             self.mcp_page,
