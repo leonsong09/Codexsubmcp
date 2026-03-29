@@ -119,15 +119,13 @@ def test_overview_buttons_dispatch_refresh_preview_and_cleanup(qtbot):
             "summary": {"configured_mcp_count": 1, "running_mcp_instance_count": 1},
             "recognition": {"status": "trusted", "reason": "ok"},
             "inventory": {"configured": [{"name": "memory"}], "running": [], "drift": {}},
+            "preview": {"summary": {"target_count": 1}, "targets": []},
         },
     )
-    qtbot.mouseClick(window.overview_page.preview_button, Qt.LeftButton)
-    window._handle_succeeded("preview", {"summary": {"target_count": 1}, "targets": []})
     qtbot.mouseClick(window.overview_page.cleanup_button, Qt.LeftButton)
 
     assert runner.requests == [
         ("refresh", {"headless": False}),
-        ("preview", {"headless": False}),
         ("cleanup", {"headless": False, "yes": True}),
     ]
 
@@ -155,7 +153,6 @@ def test_overview_page_shows_only_main_workflow_buttons(qtbot):
     assert "已配置 1" in window.overview_page.mcp_summary_label.text()
     assert "运行中 1" in window.overview_page.mcp_summary_label.text()
     assert window.overview_page.refresh_button.text() == "刷新"
-    assert window.overview_page.preview_button.text() == "预览清理"
     assert window.overview_page.cleanup_button.text() == "执行清理（管理员）"
 
 
@@ -211,10 +208,8 @@ def test_workflow_buttons_are_disabled_before_refresh(qtbot):
     window = MainWindow(task_runner=FakeTaskRunner())
     qtbot.addWidget(window)
 
-    assert not window.overview_page.preview_button.isEnabled()
     assert not window.overview_page.cleanup_button.isEnabled()
-    assert not window.cleanup_page.preview_button.isEnabled()
-    assert not window.cleanup_page.cleanup_button.isEnabled()
+    assert not window.cleanup_page.copy_table_button.isEnabled()
 
 
 def test_refresh_success_updates_pages_and_enables_workflow(qtbot, monkeypatch):
@@ -233,13 +228,12 @@ def test_refresh_success_updates_pages_and_enables_workflow(qtbot, monkeypatch):
                 "running": [{"tool_signature": "memory", "instance_count": 1}],
                 "drift": {"configured_not_running": [], "running_not_configured": []},
             },
+            "preview": {"summary": {"target_count": 0}, "targets": []},
         },
     )
 
-    assert window.overview_page.preview_button.isEnabled()
     assert not window.overview_page.cleanup_button.isEnabled()
-    assert window.cleanup_page.preview_button.isEnabled()
-    assert not window.cleanup_page.cleanup_button.isEnabled()
+    assert window.cleanup_page.copy_table_button.isEnabled()
     assert "已配置 1" in window.mcp_page.status_label.text()
     assert "校验已通过" in window.cleanup_page.summary_label.text()
     assert seen == ["logs"]
@@ -557,14 +551,12 @@ def test_cleanup_page_buttons_dispatch_preview_and_cleanup(qtbot):
             "summary": {"configured_mcp_count": 1, "running_mcp_instance_count": 1},
             "recognition": {"status": "trusted", "reason": "ok"},
             "inventory": {"configured": [{"name": "memory"}], "running": [], "drift": {}},
+            "preview": {"summary": {"target_count": 1}, "targets": []},
         },
     )
-    qtbot.mouseClick(window.cleanup_page.preview_button, Qt.LeftButton)
-    window._handle_succeeded("preview", {"summary": {"target_count": 1}, "targets": []})
-    qtbot.mouseClick(window.cleanup_page.cleanup_button, Qt.LeftButton)
+    qtbot.mouseClick(window.overview_page.cleanup_button, Qt.LeftButton)
 
     assert runner.requests == [
-        ("preview", {"headless": False}),
         ("cleanup", {"headless": False, "yes": True}),
     ]
 
@@ -774,7 +766,7 @@ def test_cleanup_page_can_render_preview_target_summary_and_details(qtbot):
     assert "kill_pid=210" in window.cleanup_page.detail_view.toPlainText()
     assert "判定原因" in window.cleanup_page.detail_view.toPlainText()
     assert "风险提示" in window.cleanup_page.detail_view.toPlainText()
-    assert "预览完成" in window.cleanup_page.summary_label.text()
+    assert "已载入 orphan 结果" in window.cleanup_page.summary_label.text()
 
 
 def test_run_cleanup_executes_preview_without_policy(qtbot, tmp_path, monkeypatch):
@@ -839,6 +831,7 @@ def test_main_window_refresh_success_updates_inventory_and_cleanup_summary(qtbot
                 "running": [{"tool_signature": "memory", "instance_count": 1}],
                 "drift": {"configured_not_running": [], "running_not_configured": []},
             },
+            "preview": {"summary": {"target_count": 0}, "targets": []},
         },
     )
 
@@ -892,18 +885,19 @@ def test_real_window_cleanup_runs_async_with_busy_feedback(qtbot, monkeypatch):
             "summary": {"configured_mcp_count": 1, "running_mcp_instance_count": 1},
             "recognition": {"status": "trusted", "reason": "ok"},
             "inventory": {"configured": [{"name": "memory"}], "running": [], "drift": {}},
+            "preview": {"summary": {"target_count": 1}, "targets": [{"target_id": "orphan-1"}]},
         },
     )
     monkeypatch.setattr(
         window,
-        "_run_preview",
-        lambda: (time.sleep(0.05) or {"summary": {"target_count": 0}}),
+        "_cleanup_or_report",
+        lambda: (time.sleep(0.05) or {"summary": {"success": False, "failed_target_count": 0}}),
     )
 
-    qtbot.mouseClick(window.cleanup_page.preview_button, Qt.LeftButton)
+    qtbot.mouseClick(window.overview_page.cleanup_button, Qt.LeftButton)
 
     qtbot.waitUntil(lambda: "执行中" in window.cleanup_page.summary_label.text(), timeout=1000)
-    qtbot.waitUntil(lambda: "预览完成" in window.cleanup_page.summary_label.text(), timeout=2000)
+    qtbot.waitUntil(lambda: "清理完成" in window.cleanup_page.summary_label.text(), timeout=2000)
 
 
 def test_real_window_mcp_refresh_runs_async_with_status_feedback(qtbot, monkeypatch):

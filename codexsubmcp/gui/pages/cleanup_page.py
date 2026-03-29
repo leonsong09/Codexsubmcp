@@ -33,30 +33,21 @@ class CleanupPage(QWidget):
     ) -> None:
         super().__init__(parent)
         self.export_dir = export_dir or Path.cwd()
-        self.preview_button = QPushButton("立即预览")
-        self.cleanup_button = QPushButton("立即清理（管理员）")
         self.copy_table_button = QPushButton("复制结果")
         self.export_table_button = QPushButton("导出结果")
-        self.preview_button.setProperty("accent", True)
-        self.cleanup_button.setProperty("destructive", True)
-        self.summary_label = QLabel("尚未执行清理。")
+        self.summary_label = QLabel("请先刷新以校验父进程识别并载入 orphan 结果。")
         self.target_table = QTableWidget(0, 6)
         self.target_table.setHorizontalHeaderLabels(["Target", "类型", "Kill PID", "进程数", "创建时间", "动作"])
         self.detail_view = QPlainTextEdit()
         self.detail_view.setReadOnly(True)
         self._targets: list[dict[str, object]] = []
 
-        if task_runner is not None:
-            self.preview_button.clicked.connect(lambda: task_runner.dispatch("preview", headless=False))
-            self.cleanup_button.clicked.connect(lambda: task_runner.dispatch("cleanup", headless=False, yes=True))
         self.copy_table_button.clicked.connect(self.copy_table)
         self.export_table_button.clicked.connect(self.export_table)
         self.target_table.currentCellChanged.connect(self._render_selected_target)
 
         actions = QHBoxLayout()
         actions.setSpacing(10)
-        actions.addWidget(self.preview_button)
-        actions.addWidget(self.cleanup_button)
         actions.addWidget(self.copy_table_button)
         actions.addWidget(self.export_table_button)
 
@@ -68,7 +59,7 @@ class CleanupPage(QWidget):
         layout.addWidget(self.detail_view)
         layout.addStretch(1)
         self.setLayout(layout)
-        self.set_actions_enabled(preview_enabled=False, cleanup_enabled=False)
+        self.set_actions_enabled(detail_enabled=False)
 
     def set_summary(self, text: str) -> None:
         self.summary_label.setText(text)
@@ -76,9 +67,9 @@ class CleanupPage(QWidget):
     def set_busy(self, text: str = "执行中...") -> None:
         self.summary_label.setText(text)
 
-    def set_actions_enabled(self, *, preview_enabled: bool, cleanup_enabled: bool) -> None:
-        self.preview_button.setEnabled(preview_enabled)
-        self.cleanup_button.setEnabled(cleanup_enabled)
+    def set_actions_enabled(self, *, detail_enabled: bool) -> None:
+        self.copy_table_button.setEnabled(detail_enabled)
+        self.export_table_button.setEnabled(detail_enabled)
 
     def set_preview(self, payload: dict[str, object]) -> None:
         targets = list(payload.get("targets") or [])
@@ -97,9 +88,10 @@ class CleanupPage(QWidget):
                 self.target_table.setItem(row, column, QTableWidgetItem(value))
         summary = payload.get("summary") or {}
         if isinstance(summary, dict):
-            self.summary_label.setText(f"预览完成：orphan 目标 {summary.get('target_count', 0)} 个")
+            self.summary_label.setText(f"已载入 orphan 结果：目标 {summary.get('target_count', 0)} 个")
         else:
-            self.summary_label.setText("预览完成。")
+            self.summary_label.setText("已载入 orphan 结果。")
+        self.set_actions_enabled(detail_enabled=True)
         if self._targets:
             self.target_table.setCurrentCell(0, 0)
         else:

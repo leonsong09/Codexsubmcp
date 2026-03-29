@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 import json
 import sys
 from datetime import datetime
@@ -28,7 +29,6 @@ from codexsubmcp.core.recognition import validate_parent_recognition
 from codexsubmcp.core.runtime_logs import (
     load_lifetime_stats,
     write_cleanup_log,
-    write_preview_log,
     write_refresh_log,
 )
 from codexsubmcp.core.system_snapshot import build_system_snapshot
@@ -206,7 +206,7 @@ class MainWindow(QMainWindow):
 
         apply_theme(self)
         self._set_top_task_status(self.task_status)
-        self._set_workflow_enabled(preview_enabled=False, cleanup_enabled=False)
+        self._set_workflow_enabled(cleanup_enabled=False, detail_enabled=False)
         self.overview_page.set_lifetime_stats(self._stats_payload())
         self._append_activity("READY shell initialized")
 
@@ -252,7 +252,13 @@ class MainWindow(QMainWindow):
         )
         self._latest_snapshot = snapshot
         self._latest_analysis = analysis
-        self._latest_preview = None
+        preview_payload = {"summary": {"target_count": 0}, "targets": []}
+        if recognition.trusted:
+            preview = build_cleanup_preview(analysis)
+            self._latest_preview = preview
+            preview_payload = json.loads(json.dumps(asdict(preview), ensure_ascii=False, default=str))
+        else:
+            self._latest_preview = None
         self._latest_recognition = {
             "status": recognition.status,
             "reason": recognition.reason,
@@ -260,25 +266,13 @@ class MainWindow(QMainWindow):
         return {
             **json.loads(log_path.read_text(encoding="utf-8")),
             "inventory": inventory,
-            "log_path": str(log_path),
-        }
-
-    def _run_preview(self) -> dict[str, object]:
-        if self._latest_analysis is None:
-            raise RuntimeError("请先刷新再预览清理。")
-        if not self._recognition_trusted():
-            raise RuntimeError(self._recognition_reason())
-        preview = build_cleanup_preview(self._latest_analysis)
-        log_path = write_preview_log(preview=preview, log_dir=self.log_dir)
-        self._latest_preview = preview
-        return {
-            **json.loads(log_path.read_text(encoding="utf-8")),
+            "preview": preview_payload,
             "log_path": str(log_path),
         }
 
     def _run_cleanup(self) -> dict[str, object]:
         if self._latest_preview is None:
-            raise RuntimeError("请先预览清理。")
+            raise RuntimeError("请先刷新并确认存在 orphan 清理目标。")
         if not self._recognition_trusted():
             raise RuntimeError(self._recognition_reason())
         result = execute_cleanup_preview(
@@ -309,9 +303,6 @@ class MainWindow(QMainWindow):
             return
         if command == "refresh":
             self.task_runner.run_task(command, self._run_refresh)
-            return
-        if command == "preview":
-            self.task_runner.run_task(command, self._run_preview)
             return
         if command == "cleanup":
             self.task_runner.run_task(command, self._cleanup_or_report)
@@ -394,13 +385,13 @@ class MainWindow(QMainWindow):
 
     def _run_once_and_refresh(self) -> TaskStatus:
         self._run_refresh()
-        self._run_preview()
-        self._run_cleanup()
+        if self._latest_preview is not None:
+            self._run_cleanup()
         return self._refresh_task_status()
 
     def _cleanup_or_report(self, *, dry_run: bool | None = None) -> dict[str, object]:
         if self._latest_preview is None:
-            raise RuntimeError("请先预览清理。")
+            raise RuntimeError("请先刷新并确认存在 orphan 清理目标。")
         if is_user_admin():
             return self._run_cleanup()
         executable_path, prefix_arguments = self._elevation_entrypoint()
@@ -445,7 +436,7 @@ class MainWindow(QMainWindow):
     def _handle_started(self, command: str) -> None:
         self._set_top_activity(f"{command} 执行中")
         self._append_activity(f"START {command}")
-        if command in {"preview", "cleanup"}:
+        if command == "cleanup":
             self.cleanup_page.set_busy("执行中...")
         elif command.startswith("task-"):
             self.task_page.set_busy("执行中...")
@@ -462,25 +453,23 @@ class MainWindow(QMainWindow):
                 self.mcp_page.set_inventory(inventory)
                 self.overview_page.set_inventory_summary(inventory)
             self.overview_page.set_refresh_summary(result)
+            preview_payload = result.get("preview") or {"summary": {"target_count": 0}, "targets": []}
+            if isinstance(preview_payload, dict):
+                self.overview_page.set_preview_summary(preview_payload)
+                self.cleanup_page.set_preview(preview_payload)
             if self._recognition_trusted_from_payload(result):
-                self.cleanup_page.set_summary("父进程识别校验已通过，可先预览 orphan 清理。")
-                self._set_workflow_enabled(preview_enabled=True, cleanup_enabled=False)
+                target_count = int((((preview_payload or {}).get("summary") or {}).get("target_count") or 0))
+                if target_count > 0:
+                    self.cleanup_page.set_summary(f"父进程识别校验已通过，发现 {target_count} 个 orphan 目标，可执行清理。")
+                    self._set_workflow_enabled(cleanup_enabled=True, detail_enabled=True)
+                else:
+                    self.cleanup_page.set_summary("父进程识别校验已通过，当前未发现 orphan 目标。")
+                    self._set_workflow_enabled(cleanup_enabled=False, detail_enabled=True)
             else:
                 self.cleanup_page.set_summary(self._recognition_reason_from_payload(result))
-                self._set_workflow_enabled(preview_enabled=False, cleanup_enabled=False)
+                self._set_workflow_enabled(cleanup_enabled=False, detail_enabled=False)
             self.overview_page.set_cleanup_summary(result)
             self.overview_page.set_lifetime_stats(self._stats_payload())
-            self.log_page.refresh_logs()
-            return
-        if command == "preview" and isinstance(result, dict):
-            self.overview_page.set_preview_summary(result)
-            self.cleanup_page.set_preview(result)
-            self.cleanup_page.set_summary(
-                f"预览完成：orphan 目标 {((result.get('summary') or {}).get('target_count') or 0)} 个"
-            )
-            self.overview_page.set_cleanup_summary(result)
-            cleanup_enabled = int(((result.get("summary") or {}).get("target_count") or 0)) > 0
-            self._set_workflow_enabled(preview_enabled=True, cleanup_enabled=cleanup_enabled)
             self.log_page.refresh_logs()
             return
         if command == "cleanup" and isinstance(result, dict):
@@ -503,13 +492,13 @@ class MainWindow(QMainWindow):
     def _handle_failed(self, command: str, message: str) -> None:
         self._set_top_activity(f"{command} 失败")
         self._append_activity(f"FAILED {command}: {message}")
-        if command in {"preview", "cleanup"}:
+        if command == "cleanup":
             self.cleanup_page.set_summary(message)
         elif command.startswith("task-"):
             self.task_page.set_error(message)
         elif command == "refresh":
             self.mcp_page.set_busy(message)
-            self._set_workflow_enabled(preview_enabled=False, cleanup_enabled=False)
+            self._set_workflow_enabled(cleanup_enabled=False, detail_enabled=False)
 
     def _handle_navigation_changed(self, index: int) -> None:
         self.stack.setCurrentIndex(index)
@@ -533,14 +522,10 @@ class MainWindow(QMainWindow):
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.activity_log_view.appendPlainText(f"{timestamp} {message}")
 
-    def _set_workflow_enabled(self, *, preview_enabled: bool, cleanup_enabled: bool) -> None:
-        self.overview_page.set_workflow_enabled(
-            preview_enabled=preview_enabled,
-            cleanup_enabled=cleanup_enabled,
-        )
+    def _set_workflow_enabled(self, *, cleanup_enabled: bool, detail_enabled: bool) -> None:
+        self.overview_page.set_workflow_enabled(cleanup_enabled=cleanup_enabled)
         self.cleanup_page.set_actions_enabled(
-            preview_enabled=preview_enabled,
-            cleanup_enabled=cleanup_enabled,
+            detail_enabled=detail_enabled,
         )
 
     def _recognition_trusted(self) -> bool:

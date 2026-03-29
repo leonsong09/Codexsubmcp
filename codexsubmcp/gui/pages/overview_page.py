@@ -24,10 +24,8 @@ class OverviewPage(QWidget):
     ) -> None:
         super().__init__(parent)
         self.refresh_button = QPushButton("刷新")
-        self.preview_button = QPushButton("预览清理")
         self.cleanup_button = QPushButton("执行清理（管理员）")
         self.task_button = QPushButton("")
-        self.preview_button.setProperty("accent", True)
         self.cleanup_button.setProperty("destructive", True)
         self.refresh_button.setProperty("accent", True)
         self.task_button.setProperty("accent", True)
@@ -46,15 +44,13 @@ class OverviewPage(QWidget):
         self._cleanable_target_count = 0
 
         self.refresh_button.clicked.connect(lambda: task_runner.dispatch("refresh", headless=False))
-        self.preview_button.clicked.connect(lambda: task_runner.dispatch("preview", headless=False))
         self.cleanup_button.clicked.connect(lambda: task_runner.dispatch("cleanup", headless=False, yes=True))
 
         actions = QGridLayout()
         actions.setHorizontalSpacing(10)
         actions.setVerticalSpacing(10)
         actions.addWidget(self.refresh_button, 0, 0)
-        actions.addWidget(self.preview_button, 0, 1)
-        actions.addWidget(self.cleanup_button, 0, 2)
+        actions.addWidget(self.cleanup_button, 0, 1)
 
         layout = QVBoxLayout()
         layout.addWidget(QLabel("总览"))
@@ -74,7 +70,7 @@ class OverviewPage(QWidget):
         self.set_task_status(task_status)
         self.set_config_summary(config)
         self.set_inventory_summary(inventory)
-        self.set_workflow_enabled(preview_enabled=False, cleanup_enabled=False)
+        self.set_workflow_enabled(cleanup_enabled=False)
 
     def set_task_status(self, task_status: TaskStatus) -> None:
         self.task_summary_label.setText(f"计划任务：{_task_text(task_status)}")
@@ -111,8 +107,7 @@ class OverviewPage(QWidget):
         installed = len(inventory.get("installed_candidates", []))
         self.mcp_summary_label.setText(f"MCP 摘要：已配置 {configured} 项 | 候选 {installed} 项")
 
-    def set_workflow_enabled(self, *, preview_enabled: bool, cleanup_enabled: bool) -> None:
-        self.preview_button.setEnabled(preview_enabled)
+    def set_workflow_enabled(self, *, cleanup_enabled: bool) -> None:
         self.cleanup_button.setEnabled(cleanup_enabled)
 
     def set_refresh_summary(self, payload: dict[str, object]) -> None:
