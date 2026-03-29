@@ -113,7 +113,15 @@ function Invoke-ReleaseApi {
         return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers
     }
 
-    return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers -Body $Body -ContentType $ContentType
+    $requestBody = $Body
+    if ($Body -is [string] -and $ContentType -like "application/json*") {
+        $requestBody = [System.Text.Encoding]::UTF8.GetBytes($Body)
+        if ($ContentType -eq "application/json") {
+            $ContentType = "application/json; charset=utf-8"
+        }
+    }
+
+    return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers -Body $requestBody -ContentType $ContentType
 }
 
 function Remove-ReleaseIfRequested {

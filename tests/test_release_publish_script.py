@@ -18,6 +18,8 @@ def test_publish_release_script_uses_api_upload_and_temp_build_dirs(
     assert '"release", "download"' in script
     assert "Downloaded exe hash mismatch" in script
     assert 'if ($message -notmatch "release not found")' in script
+    assert "[System.Text.Encoding]::UTF8.GetBytes($Body)" in script
+    assert 'application/json; charset=utf-8' in script
 
 
 def test_readme_references_latest_release_docs(
