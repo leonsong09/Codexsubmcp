@@ -119,8 +119,17 @@ function Invoke-ReleaseApi {
 function Remove-ReleaseIfRequested {
     param([string]$RepoSlug)
 
-    & gh release view $Tag -R $RepoSlug *> $null
-    $exists = $LASTEXITCODE -eq 0
+    $exists = $false
+    try {
+        & gh release view $Tag -R $RepoSlug 1> $null 2> $null
+        $exists = $LASTEXITCODE -eq 0
+    }
+    catch {
+        $message = $_.Exception.Message
+        if ($message -notmatch "release not found") {
+            throw
+        }
+    }
 
     if (-not $exists) {
         return

@@ -17,6 +17,7 @@ def test_publish_release_script_uses_api_upload_and_temp_build_dirs(
     assert "uploads.github.com/repos/$RepoSlug/releases/$ReleaseId/assets?name=$AssetName" in script
     assert '"release", "download"' in script
     assert "Downloaded exe hash mismatch" in script
+    assert 'if ($message -notmatch "release not found")' in script
 
 
 def test_readme_references_latest_release_docs(
