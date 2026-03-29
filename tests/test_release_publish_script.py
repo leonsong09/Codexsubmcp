@@ -23,7 +23,9 @@ def test_readme_references_latest_release_docs(
     project_root: Path = Path(__file__).resolve().parents[1],
 ):
     readme = (project_root / "README.md").read_text(encoding="utf-8")
+    latest_release_note = sorted((project_root / "docs" / "release-notes").glob("*.md"))[-1]
+    latest_announcement = sorted((project_root / "docs" / "release-announcements").glob("*.md"))[-1]
 
-    assert "docs/release-notes/2026-03-28-v0.3.0-cleanup-redesign.md" in readme
-    assert "docs/release-announcements/2026-03-28-v0.3.0-end-user.md" in readme
+    assert f"docs/release-notes/{latest_release_note.name}" in readme
+    assert f"docs/release-announcements/{latest_announcement.name}" in readme
     assert "docs/release-process.md" in readme

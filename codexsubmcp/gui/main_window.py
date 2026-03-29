@@ -31,7 +31,6 @@ from codexsubmcp.core.runtime_logs import (
 from codexsubmcp.core.system_snapshot import build_system_snapshot
 from codexsubmcp.gui.pages.config_page import ConfigPage
 from codexsubmcp.gui.pages.log_page import LogPage
-from codexsubmcp.gui.pages.mcp_page import McpPage
 from codexsubmcp.gui.pages.overview_page import OverviewPage
 from codexsubmcp.gui.pages.task_page import TaskPage
 from codexsubmcp.gui.task_runner import TaskRunner
@@ -88,8 +87,6 @@ class MainWindow(QMainWindow):
         resolved_export_dir = export_dir or runtime_paths.exports
         self.config_path = resolved_config_path
         self.log_dir = resolved_log_dir
-        self._latest_snapshot = None
-        self._latest_analysis = None
         self._latest_preview = None
         self._latest_recognition: dict[str, object] | None = None
         self.task_status = task_status or TaskStatus(
@@ -110,7 +107,7 @@ class MainWindow(QMainWindow):
         self.top_activity_label.setObjectName("activityPill")
 
         self.nav_list = QListWidget()
-        self.nav_list.addItems(["总览", "计划任务", "配置", "MCP 检索", "日志"])
+        self.nav_list.addItems(["总览", "计划任务", "配置", "日志"])
         self.nav_list.setObjectName("navList")
 
         self.stack = QStackedWidget()
@@ -122,14 +119,11 @@ class MainWindow(QMainWindow):
             export_dir=resolved_export_dir,
         )
         self.cleanup_page = self.overview_page.cleanup_panel
+        self.mcp_page = self.overview_page.mcp_panel
         self.task_page = TaskPage(self.task_status, self.task_runner)
         self.config_page = ConfigPage(
             config=resolved_config,
             config_path=resolved_config_path,
-            export_dir=resolved_export_dir,
-        )
-        self.mcp_page = McpPage(
-            inventory=resolved_inventory,
             export_dir=resolved_export_dir,
         )
         self.log_page = LogPage(log_dir=resolved_log_dir, export_dir=resolved_export_dir)
@@ -138,7 +132,6 @@ class MainWindow(QMainWindow):
             self.overview_page,
             self.task_page,
             self.config_page,
-            self.mcp_page,
             self.log_page,
         ):
             self.stack.addWidget(page)
@@ -178,7 +171,6 @@ class MainWindow(QMainWindow):
             self.overview_page,
             self.task_page,
             self.config_page,
-            self.mcp_page,
             self.log_page,
         ):
             page.setObjectName("contentPage")
@@ -228,8 +220,6 @@ class MainWindow(QMainWindow):
             recognition=recognition,
             log_dir=self.log_dir,
         )
-        self._latest_snapshot = snapshot
-        self._latest_analysis = analysis
         preview_payload = {"summary": {"target_count": 0}, "targets": []}
         if recognition.trusted:
             preview = build_cleanup_preview(analysis)
@@ -366,7 +356,7 @@ class MainWindow(QMainWindow):
             self._run_cleanup()
         return self._refresh_task_status()
 
-    def _cleanup_or_report(self, *, dry_run: bool | None = None) -> dict[str, object]:
+    def _cleanup_or_report(self) -> dict[str, object]:
         if self._latest_preview is None:
             raise RuntimeError("请先刷新并确认存在 orphan 清理目标。")
         if is_user_admin():
@@ -417,7 +407,7 @@ class MainWindow(QMainWindow):
         elif command.startswith("task-"):
             self.task_page.set_busy("执行中...")
         elif command == "refresh":
-            self.mcp_page.set_busy("刷新中...")
+            self.overview_page.set_inventory_busy("刷新中...")
             self.cleanup_page.set_summary("刷新中...")
 
     def _handle_succeeded(self, command: str, result: object) -> None:
@@ -425,7 +415,6 @@ class MainWindow(QMainWindow):
         if command == "refresh" and isinstance(result, dict):
             inventory = result.get("inventory") or {"configured": [], "running": [], "drift": {}}
             if isinstance(inventory, dict):
-                self.mcp_page.set_inventory(inventory)
                 self.overview_page.set_inventory_summary(inventory)
             self.overview_page.set_refresh_summary(result)
             preview_payload = result.get("preview") or {"summary": {"target_count": 0}, "targets": []}
@@ -471,7 +460,7 @@ class MainWindow(QMainWindow):
         elif command.startswith("task-"):
             self.task_page.set_error(message)
         elif command == "refresh":
-            self.mcp_page.set_busy(message)
+            self.overview_page.set_inventory_busy(message)
             self._set_workflow_enabled(cleanup_enabled=False, detail_enabled=False)
 
     def _handle_navigation_changed(self, index: int) -> None:

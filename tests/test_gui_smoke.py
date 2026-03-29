@@ -56,7 +56,7 @@ def test_main_window_shows_all_navigation_sections(qtbot):
 
     labels = [window.nav_list.item(index).text() for index in range(window.nav_list.count())]
 
-    assert labels == ["总览", "计划任务", "配置", "MCP 检索", "日志"]
+    assert labels == ["总览", "计划任务", "配置", "日志"]
 
 
 def test_main_window_applies_shell_theme_hooks(qtbot):

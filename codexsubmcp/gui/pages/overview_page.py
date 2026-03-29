@@ -5,6 +5,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QGridLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from codexsubmcp.gui.pages.cleanup_page import CleanupPage
+from codexsubmcp.gui.pages.mcp_page import McpPage
 from codexsubmcp.platform.windows.tasks import TaskStatus
 
 
@@ -29,10 +30,8 @@ class OverviewPage(QWidget):
         super().__init__(parent)
         self.refresh_button = QPushButton("刷新")
         self.cleanup_button = QPushButton("执行清理（管理员）")
-        self.task_button = QPushButton("")
         self.cleanup_button.setProperty("destructive", True)
         self.refresh_button.setProperty("accent", True)
-        self.task_button.setProperty("accent", True)
 
         self.task_summary_label = QLabel("")
         self.config_summary_label = QLabel("")
@@ -44,6 +43,7 @@ class OverviewPage(QWidget):
         self.lifetime_stats_label = QLabel("累计统计：尚无数据")
         self.refresh_status_label = QLabel("最近刷新：尚未刷新")
         self.cleanup_panel = CleanupPage(export_dir=export_dir, parent=self)
+        self.mcp_panel = McpPage(inventory=inventory, export_dir=export_dir, parent=self)
         self._runtime_summary: dict[str, object] = {}
         self._recognition: dict[str, object] = {}
         self._cleanable_target_count = 0
@@ -70,6 +70,7 @@ class OverviewPage(QWidget):
         layout.addWidget(self.mcp_summary_label)
         layout.addLayout(actions)
         layout.addWidget(self.cleanup_panel)
+        layout.addWidget(self.mcp_panel)
         layout.addStretch(1)
         self.setLayout(layout)
 
@@ -105,6 +106,7 @@ class OverviewPage(QWidget):
         )
 
     def set_inventory_summary(self, inventory: dict[str, list[dict[str, object]]]) -> None:
+        self.mcp_panel.set_inventory(inventory)
         configured = len(inventory.get("configured", []))
         running = len(inventory.get("running", []))
         if "running" in inventory:
@@ -112,6 +114,9 @@ class OverviewPage(QWidget):
             return
         installed = len(inventory.get("installed_candidates", []))
         self.mcp_summary_label.setText(f"MCP 摘要：已配置 {configured} 项 | 候选 {installed} 项")
+
+    def set_inventory_busy(self, text: str = "刷新中...") -> None:
+        self.mcp_panel.set_busy(text)
 
     def set_workflow_enabled(self, *, cleanup_enabled: bool) -> None:
         self.cleanup_button.setEnabled(cleanup_enabled)
